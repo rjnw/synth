@@ -20,13 +20,12 @@
  (define-syntax-class mixand
    #:attributes (signal weight)
    (pattern [signal:expr (~datum #:weight) weight:expr])
-   (pattern signal:expr #:with weight #'1))
- )
+   (pattern signal:expr #:with weight #'1)))
 
 (define-syntax (mix/export stx)
   (syntax-parse stx
     [(_ sig:mixand ...)
-     #'(mix (list sig.signal sig.weight) ...)]))
+     #'`(mix (,(cons sig.signal sig.weight) ...))]))
 
 (begin-for-syntax
  (define-syntax-class sequend
@@ -45,21 +44,20 @@
             ;; TODO id is too permissive
             #:with res #'`[,(note 'n octave 1)])
    (pattern [n:id octave:expr len:expr]
-            #:with res #'`[,(note 'n octave len)]))
- )
+            #:with res #'`[,(note 'n octave len)])))
 
 (define-syntax (sequence/export stx)
   (syntax-parse stx
     ;; TODO OoO keywords, support for repetitions, optional #:times
-    [(_ function:expr (~datum #:times) times:expr
+    [(_ function:id (~datum #:times) times:expr
         [note:sequend ...])
-     #'(sequence times (append note.res ...) (current-bpm) function)]))
+     #'`(sequence times ,(append note.res ...) ,(current-bpm) function)]))
 
 (define-syntax (drum/export stx)
   (syntax-parse stx
     ;; TODO OoO keywords, support for repetitions, optional #:times
     [(_ (~datum #:times) times:expr [notes ...])
-     #'(drum times '(notes ...) (current-bpm))]))
+     #'`(drum times (notes ...) ,(current-bpm))]))
 
 (module reader syntax/module-reader
   #:language 'synth)
@@ -71,4 +69,4 @@
      #'(#%module-begin
         (syntax-parameterize
          ([current-bpm (syntax-rules () [(_) bpm])])
-         (emit (mix/export signal ...) output)))]))
+          (emit (list signal ...) output)))]))

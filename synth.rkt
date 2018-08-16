@@ -1,119 +1,213 @@
 #lang racket
 
-(require math/array)
+(require math/array
+         racket/stream)
 
-(require "wav-encode.rkt") ;; TODO does not accept arrays directly
+(require "wav-encode.rkt"
+         "sequencer.rkt")
 
-;; TODO try to get deforestation for arrays. does that require
-;;   non-strict arrays? lazy arrays?
-(array-strictness #f)
-;; TODO this slows down a bit, it seems, but improves memory use
+(define fs 44100)                       ;sampling frequence 44100 samples per second
+(define bits-per-sample 16)             ;16 bites * 44100 bits per second
 
-
-(provide fs seconds->samples)
-
-(define fs 44100)
-(define bits-per-sample 16)
-
-(define (freq->sample-period freq)
+(define (freq->sample-period freq)      ;number of samples for one period
   (round (/ fs freq)))
 
 (define (seconds->samples s)
   (inexact->exact (round (* s fs))))
 
+(struct wsignal [s w] #:prefab)                   ; signal and weight
+(struct sequence [n pat tempo function] #:prefab)
+(struct mix [ss] #:prefab)
+(struct drum [pat] #:prefab)
+(struct note [f beats] #:prefab)
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; returns a stream of float
+(define (interp-mix sgls)
+  (define weights (map wsignal-w sgls))
+  (define psgnls (map wsignal-s sgls))
+  (define pstreams^ (map interp-signal psgnls))
+  (define downscale-ratio (/ 1.0 (apply + weights)))
+  (define (build-mix-stream pstreams)
+    (stream-cons
+     (foldl + 0
+            (λ (s w) (* (if (stream-empty? s) 0 (stream-first s)) w downscale-ratio))
+            pstreams weights)
+     (build-mix-stream (map (λ (s o) (if (stream-empty? s) o (stream-rest s))) pstreams pstreams^))))
+  (build-mix-stream pstreams^))
 
-;;; Oscillators
-
-(provide sine-wave square-wave sawtooth-wave inverse-sawtooth-wave
-         triangle-wave)
-
-;; array functions receive a vector of indices
-(define-syntax-rule (array-lambda (i) body ...)
-  (lambda (i*) (let ([i (vector-ref i* 0)]) body ...)))
-
-;; These all need to return floats.
-;; TODO use TR? would also optimize for us
-
-(define (sine-wave freq)
-  (define f (exact->inexact (/ (* freq 2.0 pi) fs)))
-  (array-lambda (x) (sin (* f (exact->inexact x)))))
-
-(define (square-wave freq)
-  (define sample-period (freq->sample-period freq))
-  (define sample-period/2 (quotient sample-period 2))
-  (array-lambda (x)
-    ;; 1 for the first half of the cycle, -1 for the other half
-    (define x* (modulo x sample-period))
-    (if (> x* sample-period/2) -1.0 1.0)))
+(define (append-streams s1 s2)
+  (if (stream-empty? s1)
+      s2
+      (stream-cons (stream-first s1) (append-streams (stream-rest s1) s2))))
 
 
-(define ((make-sawtooth-wave coeff) freq)
-  (define sample-period (freq->sample-period freq))
-  (define sample-period/2 (quotient sample-period 2))
-  (array-lambda (x)
-    ;; gradually goes from -1 to 1 over the whole cycle
-    (define x* (exact->inexact (modulo x sample-period)))
-    (* coeff (- (/ x* sample-period/2) 1.0))))
-(define sawtooth-wave         (make-sawtooth-wave 1.0))
-(define inverse-sawtooth-wave (make-sawtooth-wave -1.0))
-
-(define (triangle-wave freq)
+(define (build-wave wave freq x)
   (define sample-period (freq->sample-period freq))
   (define sample-period/2 (quotient sample-period 2))
   (define sample-period/4 (quotient sample-period 4))
-  (array-lambda (x)
-    ;; go from 1 to -1 for the first half of the cycle, then back up
-    (define x* (modulo x sample-period))
-    (if (> x* sample-period/2)
-        (- (/ x* sample-period/4) 3.0)
-        (+ (/ x* sample-period/4 -1.0) 1.0))))
+  (define x* (exact->inexact (modulo x sample-period)))
+  (match wave
+    ['sawtooth
+     (- (/ x* sample-period/2) 1.0)]
+    ['inverse-sawtooth
+     (* -1.0 (- (/ x* sample-period/2) 1.0))]
+    ['triangle
+     (if (> x* sample-period/2)
+         (- (/ x* sample-period/4) 3.0)
+         (+ (/ x* sample-period/4 -1.0) 1.0))]
+    ['square
+     (if (> x* sample-period/2) -1.0 1.0)]
+    ['sine
+     (sin (* (exact->inexact (/ (* freq 2.0 pi) fs))
+             (exact->inexact x)))]))
+(define (interp-sequence n pattern tempo wave)
+  (define samples-per-beat (quotient (* fs 60) tempo))
+  (define (synthesize-note nt)
+    (match-define (note type beats) nt)
+    (define nsamples (* beats samples-per-beat))
+    (define (note-stream n)
+      (if (equal? nsamples n)
+          empty-stream
+          (stream-cons (if type (build-wave wave (note-freq type) n) 0)
+                       (synthesize-note note (add1 n) nsamples))))
+    (note-stream 0))
+  (define (synthesize-sequence pat)
+    (if (empty? pat)
+        empty-stream
+        (let* ([cpat (first pat)])
+          (append-streams (if (note? cpat)
+                              (synthesize-note nt)
+                              (interp-mix cpat))
+                          (synthesize-sequence (cdr pat))))))
+  (synthesize-sequence pattern))
 
-;; TODO make sure that all of these actually produce the right frequency
-;;  (i.e. no off-by-an-octave errors)
+(define (interp-signal sgnl)
+  (printf "interpreting: ~a\n" sgnl)
+  ;; (error "stop")
+  (match sgnl
+    [(mix sgnls) (interp-mix sgnls)]
+    [(sequence n pat tempo wave) (interp-sequence n pat tempo wave)]
+    [(drum pat) 0]))
 
-;; TODO add weighted-harmonics, so we can approximate instruments
-;;  and take example from old synth
+(define (make-mix signals)
+  (if (zero? (length (cdr signals)))
+      (car signals)
+      (mix (map (λ (s) (if (wsignal? s) s (wsignal s 1))) signals))))
+
+(define (normalize signals)
+  (match signals
+    [`(,s) (normalize s)]
+    [`(,s . ,n) #:when (number? n) (wsignal (normalize s) n)]
+    [`(sequence ,n ,pat ,tempo ,wave)
+     (define npat (for/list ([p pat])
+                    (printf "sequence pattern: ~a\n" p)
+                    (if (list? (car p))
+                        (make-mix (map (λ (ps) (sequence 1 (list ps) tempo wave)) p))
+                        (begin
+                          (note (car p) (cdr p))))))
+     (sequence n npat tempo wave)]
+    [`(drum . ,d) (drum d)]
+    [`(mix . ,ss) (make-mix (map normalize ss))]
+    [ss #:when (list? ss) (make-mix (map normalize ss))]))
+
+;; returns vector of floats
+(define (create-signal-sequence signals)
+  (printf "create-signal-sequence: normalizes-signals: ")
+  (define ns (normalize signals))
+  (pretty-display ns)
+  (interp-signal ns)
+  (signal->integer-sequence (interp-signal ns) #:gain 0.3))
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(provide emit plot-signal)
-
 ;; assumes array of floats in [-1.0,1.0]
 ;; assumes gain in [0,1], which determines how loud the output is
 (define (signal->integer-sequence signal #:gain [gain 1])
-  (for/vector #:length (array-size signal)
-              ([sample (in-array signal)])
-    (max 0 (min (sub1 (expt 2 bits-per-sample)) ; clamp
-                (exact-floor
-                 (* gain
-                    (* (+ sample 1.0) ; center at 1, instead of 0
-                       (expt 2 (sub1 bits-per-sample)))))))))
+  (stream-map
+   (λ (sample)
+     (max 0 (min (sub1 (expt 2 bits-per-sample)) ; clamp
+                 (exact-floor
+                  (* gain
+                     (* (+ sample 1.0) ; center at 1, instead of 0
+                        (expt 2 (sub1 bits-per-sample))))))))
+   signal)
+  ;; (for/vector #:length (vector-length signal)
+  ;;     ([sample (in-vector signal)])
+  ;;   (max 0 (min (sub1 (expt 2 bits-per-sample)) ; clamp
+  ;;               (exact-floor
+  ;;                (* gain
+  ;;                   (* (+ sample 1.0) ; center at 1, instead of 0
+  ;;                      (expt 2 (sub1 bits-per-sample))))))))
+  )
 
-
-(require plot)
-(plot-new-window? #t)
-;; shows 2 plots
-;; - the original signal
-;; - the "digitized" signal, with series for the bounds
-;; press any key to dismiss
-(define (plot-signal signal)
-  (define n (array-size signal))
-  (plot (points (for/list ([s (in-array signal)]
-                           [i (in-naturals)])
-                  (vector i s))))
-  (plot (list (points (for/list ([s (in-vector
-                                     (signal->integer-sequence signal))]
-                                 [i (in-naturals)])
-                        (vector i s)))
-              (points (for/list ([i (in-range n)])
-                        (vector i 0)))
-              (points (for/list ([i (in-range n)])
-                        (vector i (expt 2 bits-per-sample))))))
-  (read-char))
-
-
-(define (emit signal file)
+(define (emit signals file)
+  ;; (pretty-display signals)
+  (printf "emitting: ~a\n" signals)
+  (define signal-sequence (stream->list (create-signal-sequence signals)))
   (with-output-to-file file #:exists 'replace
-    (lambda () (write-wav (signal->integer-sequence signal #:gain 0.3)))))
+    (lambda () (write-wav signal-sequence))))
+
+(module+ test
+  (define s
+    (create-signal-sequence
+     '((sequence
+        1
+        (
+         (60 . 1)
+         ;; (#f . 1) ((41 46) . 1) (#f . 1) ((43 48) . 2)
+         (#f . 1))
+        224
+        sawtooth))))
+  ;; (stream->list s)
+
+  ;; smoke-on-the-water
+  ;; (create-signal-sequence
+  ;;  '((sequence
+  ;;     1
+  ;;     (
+  ;;      ((38 43) . 1) (#f . 1) ((41 46) . 1) (#f . 1) ((43 48) . 2) (#f . 1)
+  ;;      ((38 43) . 1) (#f . 1) ((41 46) . 1) (#f . 1) ((44 49) . 1) ((43 48) . 2) (#f . 2)
+  ;;      ((38 43) . 1) (#f . 1) ((41 46) . 1) (#f . 1) ((43 48) . 2) (#f . 1) ((41 46) . 1) (#f . 1)
+  ;;      ((38 43) . 5)
+  ;;      )
+  ;;     224
+  ;;     sawtooth-wave)
+  ;;    (drum 2 (O #f X #f O #f X #f O #f X #f O O X X) 224)))
+
+  ;; funky-town
+  (emit
+   '((sequence
+      1
+      (
+       (60 . 1) (#f . 1) (60 . 1) (#f . 1) (58 . 1) (#f . 1)
+       (60 . 1) (#f . 3) (55 . 1) (#f . 3) (55 . 1) (#f . 1)
+       (60 . 1) (#f . 1) (65 . 1) (#f . 1) (64 . 1) (#f . 1)
+       (60 . 1) (#f . 9)
+       )
+      380
+      sawtooth))
+   "funky-town-stream.wav")
+
+  ;; melody
+  ;; (create-signal-sequence
+  ;;  '((mix
+  ;;     (((sequence 1 (((36 40 43) . 3) ((38 42 45) . 3)) 60 sine-wave) . 1)
+  ;;      ((sequence
+  ;;        1
+  ;;        ((48 . 1) (50 . 1) (52 . 1) (55 . 1) (52 . 1) (48 . 1))
+  ;;        60
+  ;;        square-wave)
+  ;;       .
+  ;;       3)))))
+
+  #;(emit
+     '((sequence
+        1
+        (((38 43) . 1) (#f . 1) ((41 46) . 1) (#f . 1) ((43 48) . 2) (#f . 1)
+                       ((38 43) . 1) (#f . 1) ((41 46) . 1) (#f . 1) ((44 49) . 1) ((43 48) . 2) (#f . 2)
+                       ((38 43) . 1) (#f . 1) ((41 46) . 1) (#f . 1) ((43 48) . 2) (#f . 1) ((41 46) . 1) (#f . 1)
+                       ((38 43) . 5))
+        224
+        sawtooth-wave)
+       (drum 2 (O #f X #f O #f X #f O #f X #f O O X X) 224))
+     "smoke-on-the-water.wav"))
