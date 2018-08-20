@@ -76,7 +76,7 @@
         empty-stream
         (let* ([cpat (first pat)])
           (append-streams (if (note? cpat)
-                              (synthesize-note nt)
+                              (synthesize-note cpat)
                               (interp-mix cpat))
                           (synthesize-sequence (cdr pat))))))
   (synthesize-sequence pattern))
@@ -99,24 +99,29 @@
     [`(,s) (normalize s)]
     [`(,s . ,n) #:when (number? n) (wsignal (normalize s) n)]
     [`(sequence ,n ,pat ,tempo ,wave)
-     (define npat (for/list ([p pat])
-                    (printf "sequence pattern: ~a\n" p)
-                    (if (list? (car p))
-                        (make-mix (map (λ (ps) (sequence 1 (list ps) tempo wave)) p))
-                        (begin
-                          (note (car p) (cdr p))))))
-     (sequence n npat tempo wave)]
+     (sequence n pat tempo wave)]
     [`(drum . ,d) (drum d)]
     [`(mix . ,ss) (make-mix (map normalize ss))]
     [ss #:when (list? ss) (make-mix (map normalize ss))]))
 
+(define (total-samples signals)
+  (define (samples-in-pat pat tempo)
+    (define samples-per-beat (quotient (* fs 60) tempo))
+    (foldr (λ (p t) (+ t (* samples-per-beat (cdr p)))) 0 pat))
+  (match signals
+    [(mix sgnls) (apply max (map total-samples sgnls))]
+    [(sequence n pat tempo wave) (* (samples-in-pat pat tempo))]))
 ;; returns vector of floats
 (define (create-signal-sequence signals)
   (printf "create-signal-sequence: normalizes-signals: ")
   (define ns (normalize signals))
   (pretty-display ns)
-  (interp-signal ns)
-  (signal->integer-sequence (interp-signal ns) #:gain 0.3))
+  (printf "total-samples: ~a\n" (total-samples ns))
+  ;; (error 'stop)
+  ;; (interp-signal ns)
+  ;; (signal->integer-sequence (interp-signal ns) #:gain 0.3)
+  (stream 0)
+  )
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
