@@ -1,7 +1,8 @@
 #lang racket
 
 (require "../sham/main.rkt"
-         "sequencer.rkt")
+         "sequencer.rkt"
+         "wav-encode.rkt")
 (require ffi/unsafe)
 (define sampling-frequency (make-parameter 44100))
 (define bits-per-sample (make-parameter 16))
@@ -75,19 +76,20 @@
            (s$:ret (s$:v 'nx))))))
 (define map-s->i
   (s$:dfunction
-   (void) map-s->i
+   (void) 'map-s->i
    '(wave gain nsamples)
-   (list s$:f21 s$:f32 s$:i32)
+   (list s$:f32* s$:f32 s$:i32) s$:void
    (s$:slet1^
     'ni s$:i32 (s$:ui32 0)
     (s$:while-ule^ (s$:v 'ni) (s$:v 'nsamples)
-                   (s$:se (s$:app^ (s$:rs 'set-signal)
-                                   (s$:v 'wave) (s$:v 'ni)
-                                   (s$:app^ s$:fmul
-                                            (s$:app^ (s$:rs 'signal->integer)
-                                                     (s$:app^ (s$:rs 'get-signal) (s$:v 'wave) (s$:v 'ni)))
-                                            (s$:v 'gain)))))
+                   (s$:slet1^ 'nv s$:i32 (s$:app^ (s$:rs 'signal->integer)
+                                                  (s$:app^ (s$:rs 'get-signal) (s$:v 'wave) (s$:v 'ni))
+                                                  (s$:v 'gain))
+                              (s$:slet1^ 'casted-wave s$:i32* (s$:ptrcast (s$:v 'wave) (s$:etype s$:i32*))
+                                         (s$:se (s$:store! (s$:v 'nv) (s$:gep^ (s$:v 'casted-wave) (s$:v 'ni))))))
+                   (s$:set! (s$:v 'ni) (s$:add-nuw (s$:v 'ni) (s$:ui32 1))))
     s$:ret-void)))
+
 (define (build-sequence n pattern tempo wave total-weight (id (gensym 'sequence)))
   (pretty-print pattern)
   (define wv (s$:v wave))
@@ -165,19 +167,41 @@
     [`(mix ,sgnls) (apply max (map total-samples sgnls))]
     [`(sequence ,n ,pat ,tempo ,wave) (* (samples-in-pat pat tempo))]))
 
-(define (signal-stream signal)
+(define (emit-signal signal file-name)
   (define nsamples (total-samples signal))
   (define memory-block (malloc _float nsamples))
+  (memset memory-block 0 nsamples _float)
 
-  (error "add compile signal")
   (define (mblock-stream offset)
     (if (equal? offset nsamples)
-        (begin
-          (free memory-block)
-          empty-stream)
-        (stream-cons (ptr-ref memory-block _float offset)
-                     (mblock-stream))))
-  (mblock-stream 0))
+        empty-stream
+        (stream-cons (ptr-ref memory-block _uint offset)
+                     (mblock-stream (add1 offset)))))
+  (define-values (seq-funs main-id)
+    (compile-signal signal 1.0))
+  (define signal-module
+    (s$:dmodule
+     (empty-mod-env-info) 'signal-module
+     (append
+      (list
+       sine-wave-function
+       synthesize-note
+       signal->integer
+       get-signal
+       set-signal
+       map-s->i)
+      seq-funs)))
+  (define mod-env (compile-module signal-module))
+  ;; (optimize-module mod-env #:opt-level 3 #:size-level 3)
+  (initialize-jit! mod-env)
+  (define mainf (jit-get-function main-id mod-env))
+  (define ms->i (jit-get-function 'map-s->i mod-env))
+  (mainf memory-block 0)
+  (ms->i memory-block 0.3 nsamples)
+  (define signal-stream (mblock-stream 0))
+
+  (with-output-to-file file-name #:exists 'replace
+    (λ () (write-wav signal-stream))))
 
 (module+ test
 
@@ -192,6 +216,16 @@
                 (60 . 1) (#f . 9))
                380
                sine-wave))
+  (emit-signal s "funky-town-sham.wav")
+
+
+
+
+
+
+
+
+
   (define-values (seq-funs main-id)
     (compile-signal s 1.0))
   (define test-module
@@ -203,14 +237,15 @@
        synthesize-note
        signal->integer
        get-signal
-       set-signal)
+       set-signal
+       map-s->i)
       seq-funs)))
 
   (define mod-env (time (compile-module test-module)))
 
   (jit-dump-module mod-env)
   (jit-verify-module mod-env)
-
+  ;; (error 'stop)
   (time (optimize-module mod-env #:opt-level 3 #:size-level 3))
   (jit-dump-module mod-env)
 
@@ -220,6 +255,7 @@
   (define sine-wave (jit-get-function 'sine-wave mod-env))
   (define sine-wavef-ptr (jit-get-function-ptr 'sine-wave mod-env))
   (define s->i (jit-get-function 'signal->integer mod-env))
+  (define ms->i (jit-get-function 'map-s->i mod-env))
   (define gs (jit-get-function 'get-signal mod-env))
   (define ss! (jit-get-function 'set-signal mod-env))
 
@@ -233,12 +269,9 @@
          (pretty-display (cblock->list mblock _float 100)))
   (check-= (ptr-ref mblock _float 2) (sine-wave 2 4.0) 0.00000001)
 
+  (memset mblock 0 nsamples _float)
+  (mainf mblock 0)
+  (pretty-display (cblock->list mblock _float 100))
 
-
-  ;; (pretty-print
-  ;;  (build-sequence
-  ;;   1
-  ;;   '((60 . 1) (#f . 1) (60 . 1) (#f . 1) (58 . 1) (#f . 1))
-  ;;   380
-  ;;   (s$:v 'sine-wave)))
-  )
+  (ms->i mblock 0.3 nsamples)
+  (pretty-display (cblock->list mblock _uint 100)))

@@ -23,6 +23,7 @@
 
 ;; returns a stream of float
 (define (interp-mix sgls)
+  (printf "interp-mix: sgnls: ~a\n" sgls)
   (define weights (map wsignal-w sgls))
   (define psgnls (map wsignal-s sgls))
   (define pstreams^ (map interp-signal psgnls))
@@ -61,6 +62,7 @@
      (sin (* (exact->inexact (/ (* freq 2.0 pi) fs))
              (exact->inexact x)))]))
 (define (interp-sequence n pattern tempo wave)
+  (printf "interp-sequence: n: ~a, pattern: ~a, tempo: ~a, wave: ~a\n" n pattern tempo wave)
   (define samples-per-beat (quotient (* fs 60) tempo))
   (define (synthesize-note nt)
     (match-define (note type beats) nt)
@@ -69,7 +71,7 @@
       (if (equal? nsamples n)
           empty-stream
           (stream-cons (if type (build-wave wave (note-freq type) n) 0)
-                       (synthesize-note note (add1 n) nsamples))))
+                       (note-stream (add1 n)))))
     (note-stream 0))
   (define (synthesize-sequence pat)
     (if (empty? pat)
@@ -83,7 +85,6 @@
 
 (define (interp-signal sgnl)
   (printf "interpreting: ~a\n" sgnl)
-  ;; (error "stop")
   (match sgnl
     [(mix sgnls) (interp-mix sgnls)]
     [(sequence n pat tempo wave) (interp-sequence n pat tempo wave)]
@@ -95,11 +96,15 @@
       (mix (map (λ (s) (if (wsignal? s) s (wsignal s 1))) signals))))
 
 (define (normalize signals)
+  (define (normalize-pattern pat)
+    (match pat
+      [p #:when (andmap (compose not pair? cdr) p)
+         (map (λ (p) (note (car p) (cdr p))) p)]))
   (match signals
     [`(,s) (normalize s)]
     [`(,s . ,n) #:when (number? n) (wsignal (normalize s) n)]
     [`(sequence ,n ,pat ,tempo ,wave)
-     (sequence n pat tempo wave)]
+     (sequence n (normalize-pattern pat) tempo wave)]
     [`(drum . ,d) (drum d)]
     [`(mix . ,ss) (make-mix (map normalize ss))]
     [ss #:when (list? ss) (make-mix (map normalize ss))]))
@@ -107,7 +112,7 @@
 (define (total-samples signals)
   (define (samples-in-pat pat tempo)
     (define samples-per-beat (quotient (* fs 60) tempo))
-    (foldr (λ (p t) (+ t (* samples-per-beat (cdr p)))) 0 pat))
+    (foldr (λ (p t) (+ t (* samples-per-beat (note-beats p)))) 0 pat))
   (match signals
     [(mix sgnls) (apply max (map total-samples sgnls))]
     [(sequence n pat tempo wave) (* (samples-in-pat pat tempo))]))
@@ -119,11 +124,19 @@
   (printf "total-samples: ~a\n" (total-samples ns))
   ;; (error 'stop)
   ;; (interp-signal ns)
-  ;; (signal->integer-sequence (interp-signal ns) #:gain 0.3)
-  (stream 0)
+
+  (define s (interp-signal ns))
+  (signal->integer-sequence s #:gain 0.3)
+  ;; (stream 0)
   )
 
-
+(define (n-stream s n)
+  (for/fold ([ns s]
+             [out '()]
+             #:result (reverse out))
+            ([i (in-range n)])
+    (values  (stream-rest ns)
+             (cons (stream-first ns) out))))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; assumes array of floats in [-1.0,1.0]
 ;; assumes gain in [0,1], which determines how loud the output is
@@ -148,7 +161,7 @@
 (define (emit signals file)
   ;; (pretty-display signals)
   (printf "emitting: ~a\n" signals)
-  (define signal-sequence (stream->list (create-signal-sequence signals)))
+  (define signal-sequence (create-signal-sequence signals))
   (with-output-to-file file #:exists 'replace
     (lambda () (write-wav signal-sequence))))
 
@@ -158,13 +171,14 @@
      '((sequence
         1
         (
-         (60 . 1)
-         ;; (#f . 1) ((41 46) . 1) (#f . 1) ((43 48) . 2)
-         (#f . 1))
-        224
-        sawtooth))))
+         (60 . 1) (#f . 1) (60 . 1) (#f . 1) (58 . 1) (#f . 1)
+         (60 . 1) (#f . 3) (55 . 1) (#f . 3) (55 . 1) (#f . 1)
+         (60 . 1) (#f . 1) (65 . 1) (#f . 1) (64 . 1) (#f . 1)
+         (60 . 1) (#f . 9))
+        380
+        sine))))
   ;; (stream->list s)
-
+  ;; (n-stream s 100)
   ;; smoke-on-the-water
   ;; (create-signal-sequence
   ;;  '((sequence
@@ -190,7 +204,7 @@
        (60 . 1) (#f . 9)
        )
       380
-      sawtooth))
+      sine))
    "funky-town-stream.wav")
 
   ;; melody
