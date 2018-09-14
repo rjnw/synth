@@ -124,17 +124,21 @@
                                   (s$:se (s$:app^ (s$:rs 'synthesize-note)
                                                   (s$:fl32 (note-freq n))
                                                   (s$:ui32 nsamples)
-                                                  (s$:fl32 total-weight)
+                                                  (s$:fdiv (s$:fl32 total-weight)
+                                                           (s$:fl32 (exact->inexact (length note))))
                                                   wv
                                                   (s$:v 'output)
                                                   ofst)))
                                 apps)])))
        (list s$:ret-void)))))
+  (pretty-print func)
   (values (list func) id))
 
 (define (build-mix ss total-weight (id (gensym 'mix)))
-  (match-define (cons signal weight) ss)
-  (define downscale-ratio (/ 1.0 (apply + weight)))
+  (printf "build-mix: ss ~a\n" ss)
+  (define weights (map cdr ss))
+  ;; (define signals (map car ss))
+  (define downscale-ratio (/ 1.0 (apply + weights)))
   (define-values (lower-funcs app-ids)
     (for/fold ([lower-funcs '()]
                [app-ids '()])
@@ -143,13 +147,13 @@
       (values (append fs lower-funcs) (cons id app-ids))))
   (define func
     (s$:dfunction
-     (void) (gensym 'mix)
+     (void) id
      '(output offset)
      (list s$:f32* s$:i32) s$:void
      (s$:block
       (append
        (for/list ([app-id app-ids])
-         (s$:app^ (s$:rs app-id) (s$:v 'output) (s$:v 'offset)))
+         (s$:se (s$:app^ (s$:rs app-id) (s$:v 'output) (s$:v 'offset))))
        (list s$:ret-void)))))
   (values (cons func lower-funcs) id))
 
@@ -164,7 +168,7 @@
      (define samples-per-beat (quotient (* (sampling-frequency) 60) tempo))
     (foldr (λ (p t) (+ t (* samples-per-beat (cdr p)))) 0 pat))
   (match signals
-    [`(mix ,sgnls) (apply max (map total-samples sgnls))]
+    [`(mix  (,sgnls . ,w) ...) (apply max (map total-samples sgnls))]
     [`(sequence ,n ,pat ,tempo ,wave) (* (samples-in-pat pat tempo))]))
 
 (define (emit-signal signal file-name)
@@ -201,12 +205,14 @@
   (define signal-stream (mblock-stream 0))
 
   (with-output-to-file file-name #:exists 'replace
-    (λ () (write-wav signal-stream))))
+    (λ () (write-wav signal-stream)))
+  (values mainf mod-env memory-block))
 
 (module+ test
 
   (require ffi/unsafe
            rackunit)
+
   (define s
     `(sequence 1
                (
@@ -216,40 +222,45 @@
                 (60 . 1) (#f . 9))
                380
                sine-wave))
-  (emit-signal s "funky-town-sham.wav")
+  ;; (define-values (mainf mod-env mblock) (emit-signal s "funky-town-sham.wav"))
+  (define chord-test
+    ;; `(mix ( (sequence 1
+    ;;                    ;; (((36 40 43) . 3))
+    ;;                    (
+    ;;                     (36 . 3))
+    ;;                    60 sine-wave) . 1)
+    ;;        ( (sequence 1
+    ;;                    ;; (((36 40 43) . 3))
+    ;;                    (
+    ;;                     (40 . 3))
+    ;;                    60 sine-wave)  . 1)
+    ;;        ( (sequence 1
+    ;;                   ;; (((36 40 43) . 3))
+    ;;                   (
+    ;;                    (43 . 3))
+    ;;                   60 sine-wave) . 1))
+    `(sequence 1
+              (((36 40 43) . 3))
+              ;; ( (36 . 3) (40 . 3) (43 . 3))
+              400 sine-wave)
+    )
+  (define sm
+    `(mix
+      ((sequence 1
+                 ;; ((60 . 1) (#f . 1) (60 . 1) (#f . 1) (58 . 1) (#f . 1))
+                 (((36 40 43) . 3) ((38 42 45) . 3))
+                 60 sine-wave) . 1)
+      ((sequence
+        1
+        ((48 . 1) (50 . 1) (52 . 1) (55 . 1) (52 . 1) (48 . 1))
+        60
+        sine-wave)
+       .
+       3)))
+  (define-values (mainf mod-env mblock) (emit-signal sm "melody-sham.wav"))
 
-
-
-
-
-
-
-
-
-  (define-values (seq-funs main-id)
-    (compile-signal s 1.0))
-  (define test-module
-    (s$:dmodule
-     (empty-mod-env-info) 'test-module
-     (append
-      (list
-       sine-wave-function
-       synthesize-note
-       signal->integer
-       get-signal
-       set-signal
-       map-s->i)
-      seq-funs)))
-
-  (define mod-env (time (compile-module test-module)))
-
-  (jit-dump-module mod-env)
-  (jit-verify-module mod-env)
+  ;; (jit-dump-module mod-env)
   ;; (error 'stop)
-  (time (optimize-module mod-env #:opt-level 3 #:size-level 3))
-  (jit-dump-module mod-env)
-
-  (time (initialize-jit! mod-env))
 
   (define s-note (jit-get-function 'synthesize-note mod-env))
   (define sine-wave (jit-get-function 'sine-wave mod-env))
@@ -259,19 +270,15 @@
   (define gs (jit-get-function 'get-signal mod-env))
   (define ss! (jit-get-function 'set-signal mod-env))
 
-  (define mainf (jit-get-function main-id mod-env))
-
   (define nsamples (total-samples s))
-  (define mblock (malloc _float nsamples))
 
   (begin (memset mblock 0 nsamples _float)
-         (s-note 4.0 3 1.0 sine-wavef-ptr mblock 0)
-         (pretty-display (cblock->list mblock _float 100)))
+         (s-note 4.0 3 1.0 sine-wavef-ptr mblock 0))
   (check-= (ptr-ref mblock _float 2) (sine-wave 2 4.0) 0.00000001)
 
   (memset mblock 0 nsamples _float)
   (mainf mblock 0)
-  (pretty-display (cblock->list mblock _float 100))
+  (pretty-display (cblock->list mblock _float 10))
 
   (ms->i mblock 0.3 nsamples)
-  (pretty-display (cblock->list mblock _uint 100)))
+  (pretty-display (cblock->list mblock _uint 10)))

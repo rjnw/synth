@@ -31,9 +31,11 @@
   (define (build-mix-stream pstreams)
     (stream-cons
      (foldl + 0
-            (λ (s w) (* (if (stream-empty? s) 0 (stream-first s)) w downscale-ratio))
-            pstreams weights)
-     (build-mix-stream (map (λ (s o) (if (stream-empty? s) o (stream-rest s))) pstreams pstreams^))))
+            (map (λ (s w) (* (if (stream-empty? s) 0 (stream-first s)) w downscale-ratio))
+              pstreams weights))
+     (if (andmap stream-empty? pstreams)
+         empty-stream
+         (build-mix-stream (map (λ (s o) (if (stream-empty? s) o (stream-rest s))) pstreams pstreams^)))))
   (build-mix-stream pstreams^))
 
 (define (append-streams s1 s2)
@@ -70,8 +72,13 @@
     (define (note-stream n)
       (if (equal? nsamples n)
           empty-stream
-          (stream-cons (if type (build-wave wave (note-freq type) n) 0)
-                       (note-stream (add1 n)))))
+          (stream-cons
+           (match type
+             [#f 0]
+             [x #:when (number? x) (build-wave wave (note-freq type) n)]
+             [l #:when (list? l)  (foldl + 0 (map (λ (x) (/ (build-wave wave (note-freq x) n) 2)) l))])
+           ;; (if type (build-wave wave (note-freq type) n) 0)
+           (note-stream (add1 n)))))
     (note-stream 0))
   (define (synthesize-sequence pat)
     (if (empty? pat)
@@ -98,8 +105,7 @@
 (define (normalize signals)
   (define (normalize-pattern pat)
     (match pat
-      [p #:when (andmap (compose not pair? cdr) p)
-         (map (λ (p) (note (car p) (cdr p))) p)]))
+      [p (map (λ (p) (note (car p) (cdr p))) p)]))
   (match signals
     [`(,s) (normalize s)]
     [`(,s . ,n) #:when (number? n) (wsignal (normalize s) n)]
@@ -115,7 +121,8 @@
     (foldr (λ (p t) (+ t (* samples-per-beat (note-beats p)))) 0 pat))
   (match signals
     [(mix sgnls) (apply max (map total-samples sgnls))]
-    [(sequence n pat tempo wave) (* (samples-in-pat pat tempo))]))
+    [(sequence n pat tempo wave) (* (samples-in-pat pat tempo))]
+    [(wsignal s w) (total-samples s)]))
 ;; returns vector of floats
 (define (create-signal-sequence signals)
   (printf "create-signal-sequence: normalizes-signals: ")
@@ -208,17 +215,19 @@
    "funky-town-stream.wav")
 
   ;; melody
-  ;; (create-signal-sequence
-  ;;  '((mix
-  ;;     (((sequence 1 (((36 40 43) . 3) ((38 42 45) . 3)) 60 sine-wave) . 1)
-  ;;      ((sequence
-  ;;        1
-  ;;        ((48 . 1) (50 . 1) (52 . 1) (55 . 1) (52 . 1) (48 . 1))
-  ;;        60
-  ;;        square-wave)
-  ;;       .
-  ;;       3)))))
+  (emit
+   '((mix
+      (((sequence 1 (((36 40 43) . 3) ((38 42 45) . 3)) 60 sine) . 1)
+       ((sequence
+         1
+         ((48 . 1) (50 . 1) (52 . 1) (55 . 1) (52 . 1) (48 . 1))
+         60
+         square)
+        .
+        3))))
+   "melody.wav")
 
+  ;; (emit '(sequence 1 (((36 40 43) . 3) ((38 42 45) . 3)) 60 square) "melody.wav")
   #;(emit
      '((sequence
         1
