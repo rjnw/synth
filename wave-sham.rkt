@@ -1,5 +1,8 @@
 #lang racket
-(require "../sham/main.rkt")
+
+(require
+ "wave-params.rkt"
+ "../sham/main.rkt")
 
 (provide wave-type
          sine-wave-function
@@ -7,7 +10,7 @@
          ;; sawtooth-wave-function
          )
 
-(define sampling-frequency (make-parameter 44100))
+
 
 (define wave-type (s$:tptr (s$:tfun (list s$:i32 s$:f32) s$:f32)))
 

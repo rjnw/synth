@@ -2,9 +2,11 @@
 
 (require "../sham/main.rkt"
          "sequencer.rkt"
+         "signals.rkt"
          "wav-encode.rkt"
          "wave-sham.rkt")
 
+(provide emit)
 (require ffi/unsafe)
 
 (define bits-per-sample (make-parameter 16))
@@ -96,27 +98,18 @@
                   [apps '()]
                   #:result (reverse apps))
                  ([p pattern])
-         (match-define (cons note beats) p)
+         (match-define (signal:chord notes beats) p)
+         (printf "chord: ~a\n" notes)
          (define nsamples (* samples-per-beat beats))
          (values (s$:add-nuw ofst (s$:ui32 nsamples))
-                 (cond [(false? note) apps]
-                       [(number? note)
-                        (cons (s$:se
-                               (s$:app^ (s$:rs 'synthesize-note)
-                                        (s$:fl32 (note-freq note))
-                                        (s$:ui32 nsamples)
-                                        (s$:fl32 total-weight)
-                                        wv
-                                        (s$:v 'output)
-                                        ofst))
-                              apps)]
-                       [(list? note)
-                        (append (for/list ([n note])
+                 (cond [(false? notes) apps]
+                       [(list? notes)
+                        (append (for/list ([n notes])
                                   (s$:se (s$:app^ (s$:rs 'synthesize-note)
                                                   (s$:fl32 (note-freq n))
                                                   (s$:ui32 nsamples)
                                                   (s$:fdiv (s$:fl32 total-weight)
-                                                           (s$:fl32 (exact->inexact (length note))))
+                                                           (s$:fl32 (exact->inexact (length notes))))
                                                   wv
                                                   (s$:v 'output)
                                                   ofst)))
@@ -127,14 +120,15 @@
 
 (define (build-mix ss total-weight (id (gensym 'mix)))
   (printf "build-mix: ss ~a\n" ss)
-  (define weights (map cdr ss))
+  (define weights (map signal:weighted-w ss))
   ;; (define signals (map car ss))
   (define downscale-ratio (/ 1.0 (apply + weights)))
   (define-values (lower-funcs app-ids)
     (for/fold ([lower-funcs '()]
                [app-ids '()])
-              ([s ss])
-      (define-values (fs id) (compile-signal (car s) (* (cdr s) downscale-ratio total-weight)))
+              ([ws ss])
+      (match-define (signal:weighted s w) ws)
+      (define-values (fs id) (compile-signal s (* w downscale-ratio total-weight)))
       (values (append fs lower-funcs) (cons id app-ids))))
   (define func
     (s$:dfunction
@@ -150,19 +144,21 @@
 
 (define (compile-signal signal total-weight)
   (match signal
-    [`(sequence ,n ,pat ,tempo ,wave)
+    [(signal:sequence n pat tempo wave)
      (build-sequence n pat tempo wave total-weight)]
-    [`(mix . ,ss) (build-mix ss total-weight)]))
+    [(signal:mix ss) (build-mix ss total-weight)]))
 
 (define (total-samples signals)
   (define (samples-in-pat pat tempo)
      (define samples-per-beat (quotient (* (sampling-frequency) 60) tempo))
-    (foldr (λ (p t) (+ t (* samples-per-beat (cdr p)))) 0 pat))
+    (foldr (λ (p t) (+ t (* samples-per-beat (signal:chord-beats p)))) 0 pat))
   (match signals
-    [`(mix  (,sgnls . ,w) ...) (apply max (map total-samples sgnls))]
-    [`(sequence ,n ,pat ,tempo ,wave) (* (samples-in-pat pat tempo))]))
+    [(signal:weighted s w) (total-samples s)]
+    [(signal:sequence n pat tempo wave) (* (samples-in-pat pat tempo))]
+    [(signal:mix ss) (apply max (map total-samples ss))]))
 
-(define (emit-signal signal file-name)
+(define (emit signal-sym file-name)
+  (define signal (normalize signal-sym))
   (define nsamples (total-samples signal))
   (define memory-block (malloc _float nsamples))
   (memset memory-block 0 nsamples _float)
@@ -187,7 +183,8 @@
        map-s->i)
       seq-funs)))
   (define mod-env (compile-module signal-module))
-  ;; (optimize-module mod-env #:opt-level 3 #:size-level 3)
+  (optimize-module mod-env #:opt-level 3 #:size-level 3 #:loop-vec #t)
+  (jit-dump-module mod-env)
   (initialize-jit! mod-env)
   (define mainf (jit-get-function main-id mod-env))
   (define ms->i (jit-get-function 'map-s->i mod-env))
@@ -205,23 +202,37 @@
            rackunit)
 
   (define s
-    `(sequence 1
-               (
-                (60 . 1) (#f . 1) (60 . 1) (#f . 1) (58 . 1) (#f . 1)
-                (60 . 1) (#f . 3) (55 . 1) (#f . 3) (55 . 1) (#f . 1)
-                (60 . 1) (#f . 1) (65 . 1) (#f . 1) (64 . 1) (#f . 1)
-                (60 . 1) (#f . 9))
-               380
-               sine-wave))
-  (define-values (mainf mod-env mblock) (emit-signal s "funky-town-sham.wav"))
+    '((sequence
+       1
+       (
+        (60 . 1) (#f . 1) (60 . 1) (#f . 1) (58 . 1) (#f . 1)
+        (60 . 1) (#f . 3) (55 . 1) (#f . 3) (55 . 1) (#f . 1)
+        (60 . 1) (#f . 1) (65 . 1) (#f . 1) (64 . 1) (#f . 1)
+        (60 . 1) (#f . 9))
+       380
+       sine-wave))
+    ;; `(sequence 1
+    ;;            (
+    ;;             (60 . 1) (#f . 1) (60 . 1) (#f . 1) (58 . 1) (#f . 1)
+    ;;             (60 . 1) (#f . 3) (55 . 1) (#f . 3) (55 . 1) (#f . 1)
+    ;;             (60 . 1) (#f . 1) (65 . 1) (#f . 1) (64 . 1) (#f . 1)
+    ;;             (60 . 1) (#f . 9))
+    ;;            380
+    ;;            sine-wave)
+    )
+  (define-values (mainf mod-env mblock) (time (emit s "funky-town-sham.wav")))
 
   (define sm
-    `(mix
-      ((sequence 1 (((36 40 43) . 3) ((38 42 45) . 3))
-                 60 sine-wave) . 1)
-      ((sequence 1 ((48 . 1) (50 . 1) (52 . 1) (55 . 1) (52 . 1) (48 . 1))
-                 60 sine-wave) . 3)))
-  ;; (define-values (mainf mod-env mblock) (emit-signal sm "melody-sham.wav"))
+    '((mix
+       (((sequence 1 (((36 40 43) . 3) ((38 42 45) . 3)) 60 sine) . 1)
+        ((sequence
+          1
+          ((48 . 1) (50 . 1) (52 . 1) (55 . 1) (52 . 1) (48 . 1))
+          60
+          square)
+         .
+         3)))))
+  ;; (define-values (mainf mod-env mblock) (time (emit sm "melody-sham.wav")))
 
   (define s-note (jit-get-function 'synthesize-note mod-env))
   (define sine-wave (jit-get-function 'sine-wave mod-env))
@@ -231,7 +242,7 @@
   (define gs (jit-get-function 'get-signal mod-env))
   (define ss! (jit-get-function 'set-signal mod-env))
 
-  (define nsamples (total-samples s))
+  (define nsamples (total-samples (normalize s)))
 
   (begin (memset mblock 0 nsamples _float)
          (s-note 4.0 3 1.0 sine-wavef-ptr mblock 0))

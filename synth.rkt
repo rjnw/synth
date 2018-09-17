@@ -4,28 +4,15 @@
          racket/stream)
 
 (require "wav-encode.rkt"
+         "wave-params.rkt"
+         "signals.rkt"
          "sequencer.rkt")
-
-(define fs 44100)                       ;sampling frequence 44100 samples per second
-(define bits-per-sample 16)             ;16 bites * 44100 bits per second
-
-(define (freq->sample-period freq)      ;number of samples for one period
-  (round (/ fs freq)))
-
-(define (seconds->samples s)
-  (inexact->exact (round (* s fs))))
-
-(struct wsignal [s w] #:prefab)                   ; signal and weight
-(struct sequence [n pat tempo function] #:prefab)
-(struct mix [ss] #:prefab)
-(struct drum [pat] #:prefab)
-(struct note [f beats] #:prefab)
 
 ;; returns a stream of float
 (define (interp-mix sgls)
   (printf "interp-mix: sgnls: ~a\n" sgls)
-  (define weights (map wsignal-w sgls))
-  (define psgnls (map wsignal-s sgls))
+  (define weights (map signal:weighted-w sgls))
+  (define psgnls (map signal:weighted-s sgls))
   (define pstreams^ (map interp-signal psgnls))
   (define downscale-ratio (/ 1.0 (apply + weights)))
   (define (build-mix-stream pstreams)
@@ -61,21 +48,21 @@
     ['square
      (if (> x* sample-period/2) -1.0 1.0)]
     ['sine
-     (sin (* (exact->inexact (/ (* freq 2.0 pi) fs))
+     (sin (* (exact->inexact (/ (* freq 2.0 pi) (sampling-frequency)))
              (exact->inexact x)))]))
 (define (interp-sequence n pattern tempo wave)
   (printf "interp-sequence: n: ~a, pattern: ~a, tempo: ~a, wave: ~a\n" n pattern tempo wave)
-  (define samples-per-beat (quotient (* fs 60) tempo))
-  (define (synthesize-note nt)
-    (match-define (note type beats) nt)
+  (define samples-per-beat (quotient (* (sampling-frequency) 60) tempo))
+  (define (synthesize-chord nt)
+    (match-define (signal:chord notes beats) nt)
     (define nsamples (* beats samples-per-beat))
     (define (note-stream n)
       (if (equal? nsamples n)
           empty-stream
           (stream-cons
-           (match type
+           (match notes
              [#f 0]
-             [x #:when (number? x) (build-wave wave (note-freq type) n)]
+             ;; [x #:when (number? x) (build-wave wave (note-freq type) n)]
              [l #:when (list? l)  (foldl + 0 (map (λ (x) (/ (build-wave wave (note-freq x) n) 2)) l))])
            ;; (if type (build-wave wave (note-freq type) n) 0)
            (note-stream (add1 n)))))
@@ -84,8 +71,8 @@
     (if (empty? pat)
         empty-stream
         (let* ([cpat (first pat)])
-          (append-streams (if (note? cpat)
-                              (synthesize-note cpat)
+          (append-streams (if (signal:chord? cpat)
+                              (synthesize-chord cpat)
                               (interp-mix cpat))
                           (synthesize-sequence (cdr pat))))))
   (synthesize-sequence pattern))
@@ -93,36 +80,19 @@
 (define (interp-signal sgnl)
   (printf "interpreting: ~a\n" sgnl)
   (match sgnl
-    [(mix sgnls) (interp-mix sgnls)]
-    [(sequence n pat tempo wave) (interp-sequence n pat tempo wave)]
-    [(drum pat) 0]))
+    [(signal:mix sgnls) (interp-mix sgnls)]
+    [(signal:sequence n pat tempo wave) (interp-sequence n pat tempo wave)]
+    [(signal:drum pat) 0]))
 
-(define (make-mix signals)
-  (if (zero? (length (cdr signals)))
-      (car signals)
-      (mix (map (λ (s) (if (wsignal? s) s (wsignal s 1))) signals))))
-
-(define (normalize signals)
-  (define (normalize-pattern pat)
-    (match pat
-      [p (map (λ (p) (note (car p) (cdr p))) p)]))
-  (match signals
-    [`(,s) (normalize s)]
-    [`(,s . ,n) #:when (number? n) (wsignal (normalize s) n)]
-    [`(sequence ,n ,pat ,tempo ,wave)
-     (sequence n (normalize-pattern pat) tempo wave)]
-    [`(drum . ,d) (drum d)]
-    [`(mix . ,ss) (make-mix (map normalize ss))]
-    [ss #:when (list? ss) (make-mix (map normalize ss))]))
 
 (define (total-samples signals)
   (define (samples-in-pat pat tempo)
-    (define samples-per-beat (quotient (* fs 60) tempo))
-    (foldr (λ (p t) (+ t (* samples-per-beat (note-beats p)))) 0 pat))
+    (define samples-per-beat (quotient (* (sampling-frequency) 60) tempo))
+    (foldr (λ (p t) (+ t (* samples-per-beat (signal:chord-beats p)))) 0 pat))
   (match signals
-    [(mix sgnls) (apply max (map total-samples sgnls))]
-    [(sequence n pat tempo wave) (* (samples-in-pat pat tempo))]
-    [(wsignal s w) (total-samples s)]))
+    [(signal:mix sgnls) (apply max (map total-samples sgnls))]
+    [(signal:sequence n pat tempo wave) (* (samples-in-pat pat tempo))]
+    [(signal:weighted s w) (total-samples s)]))
 ;; returns vector of floats
 (define (create-signal-sequence signals)
   (printf "create-signal-sequence: normalizes-signals: ")

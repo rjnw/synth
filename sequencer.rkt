@@ -2,10 +2,6 @@
 
 (require racket/flonum racket/unsafe/ops)
 (require math/array)
-(require
- ;; "synth.rkt"
- "mixer.rkt")
-
 
 ;; (provide scale chord note sequence mix-vector)
 (provide (all-defined-out))

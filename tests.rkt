@@ -1,6 +1,6 @@
 #lang racket
 
-(require math/array "synth.rkt" "sequencer.rkt" "mixer.rkt")
+(require math/array "synth-sham.rkt" "sequencer.rkt" "mixer.rkt")
 
 ;; (define sin-test (build-array `#(,(seconds->samples 2)) (sine-wave 440)))
 ;; (define square-test (build-array `#(,(seconds->samples 2)) (square-wave 440)))
@@ -34,12 +34,12 @@
 ;;                 120 sine-wave)
 ;;       "chords.wav")
 
-(time (emit (mix (list (sequence 2 (list (chord 'C 3 3 'major-arpeggio)
-                                         (chord 'C 3 3 'minor-arpeggio))
-                                 120 square-wave)
-                       1)
-                 (list (sequence 2 (append (scale 'C 4 1 'major-arpeggio)
-                                           (scale 'C 4 1 'minor-arpeggio))
-                                 120 sawtooth-wave)
-                       2))
-            "arpeggio.wav"))
+;; (time (emit (mix (list (sequence 2 (list (chord 'C 3 3 'major-arpeggio)
+;;                                          (chord 'C 3 3 'minor-arpeggio))
+;;                                  120 square-wave)
+;;                        1)
+;;                  (list (sequence 2 (append (scale 'C 4 1 'major-arpeggio)
+;;                                            (scale 'C 4 1 'minor-arpeggio))
+;;                                  120 sawtooth-wave)
+;;                        2))
+;;             "arpeggio.wav"))

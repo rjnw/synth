@@ -1,11 +1,7 @@
 #lang racket
 
-(require "synth.rkt" "sequencer.rkt" "mixer.rkt" "drum.rkt")
-(provide (except-out (all-from-out "synth.rkt"
-                                   "sequencer.rkt"
-                                   "mixer.rkt"
-                                   "drum.rkt")
-                     mix sequence drum)
+(require "synth-sham.rkt" "sequencer.rkt" "mixer.rkt" "drum.rkt" "wave-params.rkt")
+(provide (all-from-out "sequencer.rkt" "synth-sham.rkt")
          (rename-out [mix/export            mix]
                      [sequence/export       sequence]
                      [drum/export           drum]
@@ -68,5 +64,7 @@
         signal ...)
      #'(#%module-begin
         (syntax-parameterize
-         ([current-bpm (syntax-rules () [(_) bpm])])
-          (emit (list signal ...) output)))]))
+            ([current-bpm (syntax-rules () [(_) bpm])])
+          (emit (list signal ...) output)
+          ;; (pretty-print (list signal ...))
+          ))]))
