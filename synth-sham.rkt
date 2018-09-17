@@ -2,9 +2,11 @@
 
 (require "../sham/main.rkt"
          "sequencer.rkt"
-         "wav-encode.rkt")
+         "wav-encode.rkt"
+         "wave-sham.rkt")
+
 (require ffi/unsafe)
-(define sampling-frequency (make-parameter 44100))
+
 (define bits-per-sample (make-parameter 16))
 
 (define (freq->sample-period freq)
@@ -12,17 +14,6 @@
             freq)))
 (define (seconds->samples s)
   (inexact->exact (round (* s (sampling-frequency)))))
-
-(define wave-type (s$:tptr (s$:tfun (list s$:i32 s$:f32) s$:f32)))
-
-(define sine-wave-function
-  (s$:dfunction
-   (void) 'sine-wave
-   (list 'x 'freq) (list s$:i32 s$:f32) s$:f32
-   (s$:ret (s$:app^ (s$:ri 'llvm.sin.f32 s$:f32)
-                    (s$:fmul (s$:fdiv (s$:fmul (s$:v 'freq) (s$:fl32 (* 2.0 pi)))
-                                      (s$:fl32 (exact->inexact (sampling-frequency))))
-                             (s$:ui->fp (s$:v 'x) (s$:etype s$:f32)))))))
 
 (define (load-signal s i)
   (s$:load (s$:gep^ s i)))
@@ -222,45 +213,15 @@
                 (60 . 1) (#f . 9))
                380
                sine-wave))
-  ;; (define-values (mainf mod-env mblock) (emit-signal s "funky-town-sham.wav"))
-  (define chord-test
-    ;; `(mix ( (sequence 1
-    ;;                    ;; (((36 40 43) . 3))
-    ;;                    (
-    ;;                     (36 . 3))
-    ;;                    60 sine-wave) . 1)
-    ;;        ( (sequence 1
-    ;;                    ;; (((36 40 43) . 3))
-    ;;                    (
-    ;;                     (40 . 3))
-    ;;                    60 sine-wave)  . 1)
-    ;;        ( (sequence 1
-    ;;                   ;; (((36 40 43) . 3))
-    ;;                   (
-    ;;                    (43 . 3))
-    ;;                   60 sine-wave) . 1))
-    `(sequence 1
-              (((36 40 43) . 3))
-              ;; ( (36 . 3) (40 . 3) (43 . 3))
-              400 sine-wave)
-    )
+  (define-values (mainf mod-env mblock) (emit-signal s "funky-town-sham.wav"))
+
   (define sm
     `(mix
-      ((sequence 1
-                 ;; ((60 . 1) (#f . 1) (60 . 1) (#f . 1) (58 . 1) (#f . 1))
-                 (((36 40 43) . 3) ((38 42 45) . 3))
+      ((sequence 1 (((36 40 43) . 3) ((38 42 45) . 3))
                  60 sine-wave) . 1)
-      ((sequence
-        1
-        ((48 . 1) (50 . 1) (52 . 1) (55 . 1) (52 . 1) (48 . 1))
-        60
-        sine-wave)
-       .
-       3)))
-  (define-values (mainf mod-env mblock) (emit-signal sm "melody-sham.wav"))
-
-  ;; (jit-dump-module mod-env)
-  ;; (error 'stop)
+      ((sequence 1 ((48 . 1) (50 . 1) (52 . 1) (55 . 1) (52 . 1) (48 . 1))
+                 60 sine-wave) . 3)))
+  ;; (define-values (mainf mod-env mblock) (emit-signal sm "melody-sham.wav"))
 
   (define s-note (jit-get-function 'synthesize-note mod-env))
   (define sine-wave (jit-get-function 'sine-wave mod-env))

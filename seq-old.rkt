@@ -1,3 +1,13 @@
+#lang racket
+
+(require racket/flonum
+         racket/unsafe/ops
+         math/array)
+(define fs 44100)                       ;sampling frequence 44100 samples per second
+
+(define (note-freq note)
+  ;; A4 (440Hz) is 57 semitones above C0, which is our base.
+  (* 440 (expt (expt 2 1/12) (- note 57))))
 
 ;; Accepts notes or pauses, but not chords.
 (define (synthesize-note note n-samples function)
@@ -10,17 +20,17 @@
   ;; (print note-block)
   ;; (print "synth:") (pretty-display synth) (newline)
 
-  (define ret
-    (build-array (vector n-samples)
-                 (if note
-                     (compose (third synth) array-lambda-compose)
-                     (lambda (x) 0.0))))
+  ;; (define ret
+  ;;   (build-array (vector n-samples)
+  ;;                (if note
+  ;;                    (compose (third synth) array-lambda-compose)
+  ;;                    (lambda (x) 0.0))))
   (define retv (build-vector n-samples (if note (third synth) (lambda (x) 0.0))))
-  (for ([a (in-array ret)]
-        [v retv]
-        [i (in-range n-samples)])
-    (unless (equal? a v)
-      (printf "not equal ~a\n" i)))
+  ;; (for ([a (in-array ret)]
+  ;;       [v retv]
+  ;;       [i (in-range n-samples)])
+  ;;   (unless (equal? a v)
+  ;;     (printf "not equal ~a\n" i)))
   ;; (pretty-display ret)
   retv) ; pause
 
@@ -47,7 +57,7 @@
                                 function)))))
 
 ;; (cons (vector float) real)* -> (vector float)
-(define (mix-vector . ss)
+(define (mix . ss)
   (printf "mix-vector: n: ~a, args: ~a" (length ss) ss)
   (define signals (map car ss))
   (define weights (map cdr ss))
