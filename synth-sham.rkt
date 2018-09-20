@@ -176,6 +176,9 @@
      (append
       (list
        sine-wave-function
+       square-wave-function
+       triangle-wave-function
+       sawtooth-wave-function
        synthesize-note
        signal->integer
        get-signal
@@ -210,7 +213,7 @@
         (60 . 1) (#f . 1) (65 . 1) (#f . 1) (64 . 1) (#f . 1)
         (60 . 1) (#f . 9))
        380
-       sine-wave))
+       sawtooth-wave))
     ;; `(sequence 1
     ;;            (
     ;;             (60 . 1) (#f . 1) (60 . 1) (#f . 1) (58 . 1) (#f . 1)

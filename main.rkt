@@ -65,6 +65,5 @@
      #'(#%module-begin
         (syntax-parameterize
             ([current-bpm (syntax-rules () [(_) bpm])])
-          (emit (list signal ...) output)
-          ;; (pretty-print (list signal ...))
-          ))]))
+          (pretty-print (list signal ...))
+          (emit (list signal ...) output)))]))
