@@ -150,45 +150,60 @@
   (define (copy-array to ofst from)
     (s$:slet1^
      'i s$:i32 (s$:ui32 0)
-     (s$:while-ule^ (s$:v 'i) (s$:ui32 samples-per-beat)
+     (s$:while-ule^ (s$:v 'i) (s$:ui32 beat-samples)
                     (s$:se
                      (add-signal! to
                                   (s$:add-nuw (s$:v 'i) ofst)
-                                  (load-signal from (s$:v 'i)))))))
-  (s$:dfunction
-   (void) id
-   '(output offset)
-   (list s$:f32* s$:i32) s$:void
-   (s$:block
-    (append
-     (for/fold ([ofst (s$:v 'offset)]
-                [apps '()]
-                #:result (reverse apps))
-               ([p pattern])
-       (values
-        (s$:add-nuw ofst (s$:ui32 samples-per-beat))
-        (cons
-         (match p
-           ['X (copy-array (s$:v 'output) ofst bass-drum-array)]
-           ['O (copy-array (s$:v 'output) ofst snare-array)]
-           [#f (s$:svoid)])
-         apps)))
-     (list s$:ret-void)))))
+                                  (load-signal from (s$:v 'i))))
+                    (s$:set! (s$:v 'i) (s$:add-nuw (s$:v 'i) (s$:ui32 1))))))
+  (define func
+    (s$:dfunction
+     (void) id
+     '(output offset)
+     (list s$:f32* s$:i32) s$:void
+     (s$:block^
+      (s$:slet1^
+       'w s$:i32 (s$:ui32 0)
+       (s$:while-ule^
+        (s$:v 'w) (s$:ui32 n)
+        (s$:block^
+         (s$:block
+          (for/fold ([ofst (s$:v 'offset)]
+                     [apps '()]
+                     #:result (reverse apps))
+                    ([p pattern])
+            (values
+             (s$:add-nuw ofst (s$:ui32 samples-per-beat))
+             (cons
+              (match p
+                ['X (copy-array (s$:v 'output) ofst bass-drum-array)]
+                ['O (copy-array (s$:v 'output) ofst snare-array)]
+                [#f (s$:svoid)])
+              apps))))
+         (s$:set! (s$:v 'w) (s$:add-nuw (s$:v 'w) (s$:ui32 1)))
+         (s$:set! (s$:v 'offset) (s$:add-nuw (s$:v 'offset) (s$:ui32 (* samples-per-beat (length pattern))))))))
+      s$:ret-void)))
+  (pretty-display func)
+  (values (list func) id))
 
 (define (compile-signal signal total-weight)
   (match signal
     [(signal:sequence n pat tempo wave)
      (build-sequence n pat tempo wave total-weight)]
-    [(signal:mix ss) (build-mix ss total-weight)]))
+    [(signal:mix ss) (build-mix ss total-weight)]
+    [(signal:drum n pat tempo)
+     (build-drum n pat tempo total-weight)]))
 
 (define (total-samples signals)
+  (define (samples-per-beat tempo)
+    (quotient (* (sampling-frequency) 60) tempo))
   (define (samples-in-pat pat tempo)
-     (define samples-per-beat (quotient (* (sampling-frequency) 60) tempo))
-    (foldr (λ (p t) (+ t (* samples-per-beat (signal:chord-beats p)))) 0 pat))
+    (foldr (λ (p t) (+ t (* (samples-per-beat tempo) (signal:chord-beats p)))) 0 pat))
   (match signals
     [(signal:weighted s w) (total-samples s)]
-    [(signal:sequence n pat tempo wave) (* (samples-in-pat pat tempo))]
-    [(signal:mix ss) (apply max (map total-samples ss))]))
+    [(signal:sequence n pat tempo wave) (* n (samples-in-pat pat tempo))]
+    [(signal:mix ss) (apply max (map total-samples ss))]
+    [(signal:drum n pat tempo) (* n (length pat) (samples-per-beat tempo))]))
 
 (define (emit signal-sym file-name)
   (define signal (normalize signal-sym))
@@ -238,7 +253,7 @@
            rackunit)
 
   (define s
-    '((sequence
+    '(mix (sequence
        1
        (
         (60 . 1) (#f . 1) (60 . 1) (#f . 1) (58 . 1) (#f . 1)
@@ -246,7 +261,8 @@
         (60 . 1) (#f . 1) (65 . 1) (#f . 1) (64 . 1) (#f . 1)
         (60 . 1) (#f . 9))
        380
-       sawtooth-wave))
+       sawtooth-wave)
+      (drum  8 (O #f #f #f X #f #f #f) 380))
     ;; `(sequence 1
     ;;            (
     ;;             (60 . 1) (#f . 1) (60 . 1) (#f . 1) (58 . 1) (#f . 1)

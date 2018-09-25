@@ -6,7 +6,7 @@
 (struct signal:weighted signal [s w] #:prefab)
 (struct signal:sequence signal [n pat tempo function] #:prefab)
 (struct signal:mix signal [ss] #:prefab)
-(struct signal:drum signal [pat] #:prefab)
+(struct signal:drum signal [n pat tempo] #:prefab)
 (struct signal:chord signal [notes beats] #:prefab)
 
 (define (normalize signals)
@@ -21,7 +21,7 @@
     [`(,s . ,n) #:when (number? n) (signal:weighted (normalize s) n)]
     [`(sequence ,n ,pat ,tempo ,wave)
      (signal:sequence n (normalize-pattern pat) tempo wave)]
-    [`(drum . ,d) (signal:drum d)]
+    [`(drum ,n ,pat ,tempo) (signal:drum n pat tempo)]
     [`(mix . ,ss) (make-mix (map normalize ss))]
     [ss #:when (list? ss) (make-mix (map normalize ss))]))
 
