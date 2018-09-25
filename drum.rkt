@@ -25,9 +25,7 @@
                 sample))))
 (define snare
   ;; 0.05 seconds of noise
-  (array->list
-   (build-array (vector (seconds->samples 0.05))
-                (lambda (x) (random-sample)))))
+  (for/list [(i (in-range (seconds->samples 0.05)))] (random-sample)))
 
 ;; limited drum machine
 ;; drum patterns are simply lists with either O (bass drum), X (snare) or

@@ -142,6 +142,39 @@
        (list s$:ret-void)))))
   (values (cons func lower-funcs) id))
 
+(define (build-drum n pattern tempo total-weight (id (gensym 'drum)))
+  (pretty-print pattern)
+  (define samples-per-beat (quotient (* (sampling-frequency) 60) tempo))
+  (define beat-samples (seconds->samples 0.05))
+  ;; bass-drum-array snare-array
+  (define (copy-array to ofst from)
+    (s$:slet1^
+     'i s$:i32 (s$:ui32 0)
+     (s$:while-ule^ (s$:v 'i) (s$:ui32 samples-per-beat)
+                    (s$:se
+                     (add-signal! to
+                                  (s$:add-nuw (s$:v 'i) ofst)
+                                  (load-signal from (s$:v 'i)))))))
+  (s$:dfunction
+   (void) id
+   '(output offset)
+   (list s$:f32* s$:i32) s$:void
+   (s$:block
+    (append
+     (for/fold ([ofst (s$:v 'offset)]
+                [apps '()]
+                #:result (reverse apps))
+               ([p pattern])
+       (values
+        (s$:add-nuw ofst (s$:ui32 samples-per-beat))
+        (cons
+         (match p
+           ['X (copy-array (s$:v 'output) ofst bass-drum-array)]
+           ['O (copy-array (s$:v 'output) ofst snare-array)]
+           [#f (s$:svoid)])
+         apps)))
+     (list s$:ret-void)))))
+
 (define (compile-signal signal total-weight)
   (match signal
     [(signal:sequence n pat tempo wave)

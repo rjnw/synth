@@ -65,8 +65,8 @@
           (s$:ret (s$:fl32 -1.0))
           (s$:ret (s$:fl32 1.0)))))
 
-(define bass-drum-array (list->cblock bass-drum))
-(define snare-array (list->cblock snare))
+(define bass-drum-array (s$:ptrcast (s$:rptr->llvmptr (list->cblock bass-drum _float)) (s$:etype s$:i8*) (s$:etype s$:f32*)))
+(define snare-array (s$:ptrcast (s$:rptr->llvmptr (list->cblock snare _float)) (s$:etype s$:i8*) (s$:etype s$:f32*)))
 
 (module+ test
   (require ffi/unsafe
