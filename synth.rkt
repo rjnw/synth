@@ -82,7 +82,7 @@
   (match sgnl
     [(signal:mix sgnls) (interp-mix sgnls)]
     [(signal:sequence n pat tempo wave) (interp-sequence n pat tempo wave)]
-    [(signal:drum pat) 0]))
+    [(signal:drum n pat tempo) 0]))
 
 
 (define (total-samples signals)

@@ -57,5 +57,5 @@
 
 ;; Single note.
 (define (note name octave duration)
-  (printf "note: name ~a, octave ~a, note ~a\n" name octave (name+octave->note name octave))
+  ;; (printf "note: name ~a, octave ~a, note ~a\n" name octave (name+octave->note name octave))
   (cons (name+octave->note name octave) duration))

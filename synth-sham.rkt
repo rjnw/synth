@@ -84,7 +84,7 @@
     s$:ret-void)))
 
 (define (build-sequence n pattern tempo wave total-weight (id (gensym 'sequence)))
-  (pretty-print pattern)
+  ;; (pretty-print pattern)
   (define wv (s$:v wave))
   (define samples-per-beat (quotient (* (sampling-frequency) 60) tempo))
   (define func
@@ -99,7 +99,7 @@
                   #:result (reverse apps))
                  ([p pattern])
          (match-define (signal:chord notes beats) p)
-         (printf "chord: ~a\n" notes)
+         ;; (printf "chord: ~a\n" notes)
          (define nsamples (* samples-per-beat beats))
          (values (s$:add-nuw ofst (s$:ui32 nsamples))
                  (cond [(false? notes) apps]
@@ -115,11 +115,11 @@
                                                   ofst)))
                                 apps)])))
        (list s$:ret-void)))))
-  (pretty-print func)
+  ;; (pretty-print func)
   (values (list func) id))
 
 (define (build-mix ss total-weight (id (gensym 'mix)))
-  (printf "build-mix: ss ~a\n" ss)
+  ;; (printf "build-mix: ss ~a\n" ss)
   (define weights (map signal:weighted-w ss))
   ;; (define signals (map car ss))
   (define downscale-ratio (/ 1.0 (apply + weights)))
@@ -143,7 +143,7 @@
   (values (cons func lower-funcs) id))
 
 (define (build-drum n pattern tempo total-weight (id (gensym 'drum)))
-  (pretty-print pattern)
+  ;; (pretty-print pattern)
   (define samples-per-beat (quotient (* (sampling-frequency) 60) tempo))
   (define beat-samples (seconds->samples 0.05))
   ;; bass-drum-array snare-array
@@ -154,7 +154,8 @@
                     (s$:se
                      (add-signal! to
                                   (s$:add-nuw (s$:v 'i) ofst)
-                                  (load-signal from (s$:v 'i))))
+                                  (s$:fmul (load-signal (s$:ptrcast from (s$:etype s$:f32*)) (s$:v 'i))
+                                           (s$:fl32 total-weight)) ))
                     (s$:set! (s$:v 'i) (s$:add-nuw (s$:v 'i) (s$:ui32 1))))))
   (define func
     (s$:dfunction
@@ -183,7 +184,7 @@
          (s$:set! (s$:v 'w) (s$:add-nuw (s$:v 'w) (s$:ui32 1)))
          (s$:set! (s$:v 'offset) (s$:add-nuw (s$:v 'offset) (s$:ui32 (* samples-per-beat (length pattern))))))))
       s$:ret-void)))
-  (pretty-display func)
+  ;; (pretty-display func)
   (values (list func) id))
 
 (define (compile-signal signal total-weight)
@@ -208,7 +209,7 @@
 (define (emit signal-sym file-name)
   (define signal (normalize signal-sym))
   (define nsamples (total-samples signal))
-  (define memory-block (malloc _float nsamples))
+  (define memory-block (malloc _double nsamples 'raw))
   (memset memory-block 0 nsamples _float)
 
   (define (mblock-stream offset)
@@ -234,18 +235,21 @@
        map-s->i)
       seq-funs)))
   (define mod-env (compile-module signal-module))
+  (jit-verify-module mod-env)
   (optimize-module mod-env #:opt-level 3 #:size-level 3 #:loop-vec #t)
-  (jit-dump-module mod-env)
+  ;; (jit-verify-module mod-env)
+  ;; (jit-dump-module mod-env)
   (initialize-jit! mod-env)
   (define mainf (jit-get-function main-id mod-env))
   (define ms->i (jit-get-function 'map-s->i mod-env))
   (mainf memory-block 0)
   (ms->i memory-block 0.3 nsamples)
   (define signal-stream (mblock-stream 0))
-
   (with-output-to-file file-name #:exists 'replace
     (λ () (write-wav signal-stream)))
-  (values mainf mod-env memory-block))
+  (printf "done writing, freeing memory.\n")
+  (free memory-block)
+  (values mainf mod-env))
 
 (module+ test
 
@@ -253,7 +257,8 @@
            rackunit)
 
   (define s
-    '(mix (sequence
+    '(
+      (sequence
        1
        (
         (60 . 1) (#f . 1) (60 . 1) (#f . 1) (58 . 1) (#f . 1)
@@ -262,7 +267,8 @@
         (60 . 1) (#f . 9))
        380
        sawtooth-wave)
-      (drum  8 (O #f #f #f X #f #f #f) 380))
+      (drum 8 (O #f #f #f X #f #f #f) 380)
+      )
     ;; `(sequence 1
     ;;            (
     ;;             (60 . 1) (#f . 1) (60 . 1) (#f . 1) (58 . 1) (#f . 1)
@@ -272,7 +278,7 @@
     ;;            380
     ;;            sine-wave)
     )
-  (define-values (mainf mod-env mblock) (time (emit s "funky-town-sham.wav")))
+  (define-values (mainf mod-env) (time (emit s "funky-town-sham.wav")))
 
   (define sm
     '((mix
@@ -286,23 +292,26 @@
          3)))))
   ;; (define-values (mainf mod-env mblock) (time (emit sm "melody-sham.wav")))
 
-  (define s-note (jit-get-function 'synthesize-note mod-env))
-  (define sine-wave (jit-get-function 'sine-wave mod-env))
-  (define sine-wavef-ptr (jit-get-function-ptr 'sine-wave mod-env))
-  (define s->i (jit-get-function 'signal->integer mod-env))
-  (define ms->i (jit-get-function 'map-s->i mod-env))
-  (define gs (jit-get-function 'get-signal mod-env))
-  (define ss! (jit-get-function 'set-signal mod-env))
+  ;; (define s-note (jit-get-function 'synthesize-note mod-env))
+  ;; (define sine-wave (jit-get-function 'sine-wave mod-env))
+  ;; (define sine-wavef-ptr (jit-get-function-ptr 'sine-wave mod-env))
+  ;; (define s->i (jit-get-function 'signal->integer mod-env))
+  ;; (define ms->i (jit-get-function 'map-s->i mod-env))
+  ;; (define gs (jit-get-function 'get-signal mod-env))
+  ;; (define ss! (jit-get-function 'set-signal mod-env))
 
-  (define nsamples (total-samples (normalize s)))
+  ;; (define nsamples (total-samples (normalize s)))
 
-  (begin (memset mblock 0 nsamples _float)
-         (s-note 4.0 3 1.0 sine-wavef-ptr mblock 0))
-  (check-= (ptr-ref mblock _float 2) (sine-wave 2 4.0) 0.00000001)
+  ;; (define mblock (malloc _float nsamples))
 
-  (memset mblock 0 nsamples _float)
-  (mainf mblock 0)
-  (pretty-display (cblock->list mblock _float 10))
+  ;; (begin (memset mblock 0 nsamples _float)
+  ;;        (s-note 4.0 3 1.0 sine-wavef-ptr mblock 0))
+  ;; (check-= (ptr-ref mblock _float 2) (sine-wave 2 4.0) 0.00000001)
 
-  (ms->i mblock 0.3 nsamples)
-  (pretty-display (cblock->list mblock _uint 10)))
+  ;; (memset mblock 0 nsamples _float)
+  ;; (mainf mblock 0)
+  ;; (pretty-display (cblock->list mblock _float 10))
+
+  ;; (ms->i mblock 0.3 nsamples)
+  ;; (pretty-display (cblock->list mblock _uint 10))
+  )

@@ -11,4 +11,4 @@
    (G 4) #f (C 5) #f (F 5) #f (E 5) #f (C 5) (#f 9)
    ])
 
-;; (drum #:times 8 (O #f #f #f X #f #f #f))
+(drum #:times 8 (O #f #f #f X #f #f #f))
