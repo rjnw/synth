@@ -36,7 +36,7 @@
 ;; starting at i 0->nsamples, output[i+offset] = wavef(i)
 (define-function synthesize-note
   [(freq : f32) (nsamples : i32) (total-weight : f32) (wavef : wave-type) (output : f32*) (offset : i32)] tvoid
-  (let^ ([ni (ui32 0) : i32])
+  (slet^ ([ni (ui32 0) : i32])
         (while-ule^ ni nsamples
                     (add-signal! output
                                  (add-nuw ni offset)
@@ -48,12 +48,55 @@
 
 (define-function signal->integer
   [(x : f32) (gain : f32)] i32
-  (let^ ([nx (fp->ui
+  (slet^ ([nx (fp->ui
               (fmul gain
                     (fmul (fadd x (fl32 1.0))
                           (fl32 (exact->inexact (expt 2 (sub1 ( bits-per-sample)))))))
               (etype i32))
              : i32])
-    (if (icmp-ule (ui32 (expt 2 (sub1 ( bits-per-sample)))) nx)
-        (return (ui32 (expt 2 (sub1 ( bits-per-sample)))))
-        (return nx))))
+        (if^ (icmp-ule (ui32 (expt 2 (sub1 (bits-per-sample)))) nx)
+             (return (ui32 (expt 2 (sub1 (bits-per-sample)))))
+             (return nx))))
+
+(define-function map-s->i
+  [(wave : f32*) (gain : f32) (nsamples : i32)] tvoid
+  (slet^ ([ni (ui32 0) : i32])
+        (while-ule^ ni nsamples
+                    (let^ ([nv (app^ (rs 'signal->integer)
+                                     (app^ (rs 'get-signal) wave ni)
+                                     gain)
+                               : i32]
+                           [casted-wave (ptrcast wave (etype i32*)) : i32*])
+                          (store! nv (gep^ casted-wave ni)))
+                    (set! ni (add-nuw ni (ui32 1))))
+        return-void))
+
+(module+ test
+  (require "../sham/main.rkt")
+  (define-module test-module
+    (empty-mod-env-info)
+    (list get-signal set-signal
+          ;; synthesize-note
+          signal->integer
+          map-s->i
+          ))
+  (define test-mod-env (compile-module test-module))
+  (jit-verify-module test-mod-env)
+  (optimize-module test-mod-env #:opt-level 3)
+  (initialize-jit! test-mod-env)
+  (jit-dump-module test-mod-env)
+
+  (define gs (jit-get-function 'get-signal test-mod-env))
+  (define ss! (jit-get-function 'set-signal test-mod-env))
+
+
+  ;; (define s-note (jit-get-function 'synthesize-note test-mod-env))
+  ;; (define s->i (jit-get-function 'signal->integer test-mod-env))
+  ;; (define ms->i (jit-get-function 'map-s->i test-mod-env))
+
+
+
+  (define mblock (malloc _double 10000))
+  (memset mblock 0 10000 _double)
+
+  )
