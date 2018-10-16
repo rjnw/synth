@@ -1,197 +1,43 @@
 #lang racket
 
 (require "../sham/main.rkt"
+         "../sham/private/ast-utils.rkt"
          "sequencer.rkt"
          "signals.rkt"
          "wav-encode.rkt"
-         "wave-sham.rkt")
+         "wave-sham.rkt"
+         "wave-params.rkt"
+         "prelude.rkt")
 
 (provide emit)
 (require ffi/unsafe)
 
 (define bits-per-sample (make-parameter 16))
 
-(define (freq->sample-period freq)
-  (round (/ (sampling-frequency)
-            freq)))
-(define (seconds->samples s)
-  (inexact->exact (round (* s (sampling-frequency)))))
 
-(define (load-signal s i)
-  (s$:load (s$:gep^ s i)))
-(define (add-signal! s i v)
-  (s$:store! (s$:fadd (load-signal s i) v)
-             (s$:gep^ s i)))
 
-(define get-signal
-  (s$:dfunction
-   (void) 'get-signal
-   '(cblock index)
-   (list s$:f32* s$:i32) s$:f32
-   (s$:ret (load-signal (s$:v 'cblock) (s$:v 'index)))))
-(define set-signal
-  (s$:dfunction
-   (void) 'set-signal
-   '(cblock index value)
-   (list s$:f32* s$:i32 s$:f32) s$:void
-   (s$:block^ (s$:se (s$:store! (s$:v 'value)
-                               (s$:gep^ (s$:v 'cblock) (s$:v 'index))))
-              s$:ret-void)))
-;; sham function: (frequency f32) (nsamples i32) (wavef (f32 i32 -> f32)) (output f32*) (offset i32)
-;; starting at i 0->nsamples, output[i+offset] = wavef(i)
-(define synthesize-note
-  (s$:dfunction
-   (void) 'synthesize-note
-   '(freq nsamples total-weight wavef output offset)
-   (list s$:f32 s$:i32 s$:f32 wave-type s$:f32* s$:i32) s$:void
-   (s$:slet1^
-    'ni s$:i32 (s$:ui32 0)
-    (s$:while-ule^ (s$:v 'ni) (s$:v 'nsamples)
-                   (s$:se
-                    (add-signal! (s$:v 'output)
-                                 (s$:add-nuw (s$:v 'ni) (s$:v 'offset))
-                                 (s$:fmul (s$:app^ (s$:rs 'wavef)  (s$:v 'ni) (s$:v 'freq))
-                                          (s$:v 'total-weight))))
-                   (s$:set! (s$:v 'ni) (s$:add-nuw (s$:v 'ni) (s$:ui32 1))))
-    s$:ret-void)))
 
-(define signal->integer
-  (s$:dfunction
-   (void) 'signal->integer
-   '(x gain) (list s$:f32 s$:f32) s$:i32
-   (s$:slet1^
-    'nx s$:i32 (s$:fp->ui (s$:fmul (s$:v 'gain)
-                                   (s$:fmul (s$:fadd (s$:v 'x) (s$:fl32 1.0))
-                                            (s$:fl32 (exact->inexact (expt 2 (sub1 ( bits-per-sample)))))))
-                          (s$:etype s$:i32))
-    (s$:if (s$:icmp-ule (s$:ui32 (expt 2 (sub1 ( bits-per-sample)))) (s$:v 'nx))
-           (s$:ret (s$:ui32 (expt 2 (sub1 ( bits-per-sample)))))
-           (s$:ret (s$:v 'nx))))))
-(define map-s->i
-  (s$:dfunction
-   (void) 'map-s->i
-   '(wave gain nsamples)
-   (list s$:f32* s$:f32 s$:i32) s$:void
-   (s$:slet1^
-    'ni s$:i32 (s$:ui32 0)
-    (s$:while-ule^ (s$:v 'ni) (s$:v 'nsamples)
-                   (s$:slet1^ 'nv s$:i32 (s$:app^ (s$:rs 'signal->integer)
-                                                  (s$:app^ (s$:rs 'get-signal) (s$:v 'wave) (s$:v 'ni))
-                                                  (s$:v 'gain))
-                              (s$:slet1^ 'casted-wave s$:i32* (s$:ptrcast (s$:v 'wave) (s$:etype s$:i32*))
-                                         (s$:se (s$:store! (s$:v 'nv) (s$:gep^ (s$:v 'casted-wave) (s$:v 'ni))))))
-                   (s$:set! (s$:v 'ni) (s$:add-nuw (s$:v 'ni) (s$:ui32 1))))
-    s$:ret-void)))
 
-(define (build-sequence n pattern tempo wave total-weight (id (gensym 'sequence)))
-  ;; (pretty-print pattern)
-  (define wv (s$:v wave))
-  (define samples-per-beat (quotient (* (sampling-frequency) 60) tempo))
-  (define func
-    (s$:dfunction
-     (void) id
-     '(output offset)
-     (list s$:f32* s$:i32) s$:void
-     (s$:block
-      (append
-       (for/fold ([ofst (s$:v 'offset)]
-                  [apps '()]
-                  #:result (reverse apps))
-                 ([p pattern])
-         (match-define (signal:chord notes beats) p)
-         ;; (printf "chord: ~a\n" notes)
-         (define nsamples (* samples-per-beat beats))
-         (values (s$:add-nuw ofst (s$:ui32 nsamples))
-                 (cond [(false? notes) apps]
-                       [(list? notes)
-                        (append (for/list ([n notes])
-                                  (s$:se (s$:app^ (s$:rs 'synthesize-note)
-                                                  (s$:fl32 (note-freq n))
-                                                  (s$:ui32 nsamples)
-                                                  (s$:fdiv (s$:fl32 total-weight)
-                                                           (s$:fl32 (exact->inexact (length notes))))
-                                                  wv
-                                                  (s$:v 'output)
-                                                  ofst)))
-                                apps)])))
-       (list s$:ret-void)))))
-  ;; (pretty-print func)
-  (values (list func) id))
 
-(define (build-mix ss total-weight (id (gensym 'mix)))
-  ;; (printf "build-mix: ss ~a\n" ss)
-  (define weights (map signal:weighted-w ss))
-  ;; (define signals (map car ss))
-  (define downscale-ratio (/ 1.0 (apply + weights)))
-  (define-values (lower-funcs app-ids)
-    (for/fold ([lower-funcs '()]
-               [app-ids '()])
-              ([ws ss])
-      (match-define (signal:weighted s w) ws)
-      (define-values (fs id) (compile-signal s (* w downscale-ratio total-weight)))
-      (values (append fs lower-funcs) (cons id app-ids))))
-  (define func
-    (s$:dfunction
-     (void) id
-     '(output offset)
-     (list s$:f32* s$:i32) s$:void
-     (s$:block
-      (append
-       (for/list ([app-id app-ids])
-         (s$:se (s$:app^ (s$:rs app-id) (s$:v 'output) (s$:v 'offset))))
-       (list s$:ret-void)))))
-  (values (cons func lower-funcs) id))
 
-(define (build-drum n pattern tempo total-weight (id (gensym 'drum)))
-  ;; (pretty-print pattern)
-  (define samples-per-beat (quotient (* (sampling-frequency) 60) tempo))
-  (define beat-samples (seconds->samples 0.05))
-  ;; bass-drum-array snare-array
-  (define (copy-array to ofst from)
-    (s$:slet1^
-     'i s$:i32 (s$:ui32 0)
-     (s$:while-ule^ (s$:v 'i) (s$:ui32 beat-samples)
-                    (s$:se
-                     (add-signal! to
-                                  (s$:add-nuw (s$:v 'i) ofst)
-                                  (s$:fmul (load-signal (s$:ptrcast from (s$:etype s$:f32*)) (s$:v 'i))
-                                           (s$:fl32 total-weight)) ))
-                    (s$:set! (s$:v 'i) (s$:add-nuw (s$:v 'i) (s$:ui32 1))))))
-  (define func
-    (s$:dfunction
-     (void) id
-     '(output offset)
-     (list s$:f32* s$:i32) s$:void
-     (s$:block^
-      (s$:slet1^
-       'w s$:i32 (s$:ui32 0)
-       (s$:while-ule^
-        (s$:v 'w) (s$:ui32 n)
-        (s$:block^
-         (s$:block
-          (for/fold ([ofst (s$:v 'offset)]
-                     [apps '()]
-                     #:result (reverse apps))
-                    ([p pattern])
-            (values
-             (s$:add-nuw ofst (s$:ui32 samples-per-beat))
-             (cons
-              (match p
-                ['X (copy-array (s$:v 'output) ofst bass-drum-array)]
-                ['O (copy-array (s$:v 'output) ofst snare-array)]
-                [#f (s$:svoid)])
-              apps))))
-         (s$:set! (s$:v 'w) (s$:add-nuw (s$:v 'w) (s$:ui32 1)))
-         (s$:set! (s$:v 'offset) (s$:add-nuw (s$:v 'offset) (s$:ui32 (* samples-per-beat (length pattern))))))))
-      s$:ret-void)))
-  ;; (pretty-display func)
-  (values (list func) id))
 
 (define (compile-signal signal total-weight)
   (match signal
     [(signal:sequence n pat tempo wave)
      (build-sequence n pat tempo wave total-weight)]
-    [(signal:mix ss) (build-mix ss total-weight)]
+    [(signal:mix ss)
+     (define weights (map signal:weighted-w ss))
+     ;; (define signals (map car ss))
+     (define downscale-ratio (/ 1.0 (apply + weights)))
+     (define-values (lower-funcs ss-apps)
+       (for/fold ([lower-funcs '()]
+                  [ss-apps '()])
+                 ([ws ss])
+         (match-define (signal:weighted s w) ws)
+         (define-values (f lfs) (compile-signal s (* w downscale-ratio total-weight)))
+         (values (append lfs lower-funcs) (cons f ss-apps))))
+
+     (build-mix ssfs total-weight)]
     [(signal:drum n pat tempo)
      (build-drum n pat tempo total-weight)]))
 
