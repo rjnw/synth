@@ -2,24 +2,15 @@
 
 (require "../sham/main.rkt"
          "../sham/private/ast-utils.rkt"
-         "sequencer.rkt"
          "signals.rkt"
-         "wav-encode.rkt"
-         "wave-sham.rkt"
+         "wave-builder.rkt"
          "wave-params.rkt"
-         "prelude.rkt")
+         "wave-sham.rkt"
+         "prelude.rkt"
+         "wav-encode.rkt")
 
 (provide emit)
 (require ffi/unsafe)
-
-(define bits-per-sample (make-parameter 16))
-
-
-
-
-
-
-
 
 (define (compile-signal signal total-weight)
   (match signal
@@ -29,13 +20,13 @@
      (define weights (map signal:weighted-w ss))
      ;; (define signals (map car ss))
      (define downscale-ratio (/ 1.0 (apply + weights)))
-     (define-values (lower-funcs ss-apps)
+     (define-values (lower-funcs ssfs)
        (for/fold ([lower-funcs '()]
-                  [ss-apps '()])
+                  [ssfs '()])
                  ([ws ss])
          (match-define (signal:weighted s w) ws)
          (define-values (f lfs) (compile-signal s (* w downscale-ratio total-weight)))
-         (values (append lfs lower-funcs) (cons f ss-apps))))
+         (values (append lfs lower-funcs) (cons f ssfs))))
 
      (build-mix ssfs total-weight)]
     [(signal:drum n pat tempo)
@@ -70,17 +61,17 @@
      (empty-mod-env-info) 'signal-module
      (append
       (list
-       sine-wave-function
-       square-wave-function
-       triangle-wave-function
-       sawtooth-wave-function
+       sine-wave
+       square-wave
+       triangle-wave
+       sawtooth-wave
        synthesize-note
        signal->integer
        get-signal
        set-signal
        map-s->i)
       seq-funs)))
-  (define mod-env (compile-module signal-module))
+  (define mod-env (jit-module-compile signal-module))
   (jit-verify-module mod-env)
   (optimize-module mod-env #:opt-level 3 #:size-level 3 #:loop-vec #t)
   ;; (jit-verify-module mod-env)

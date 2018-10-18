@@ -11,8 +11,7 @@
          triangle-wave
          square-wave
          bass-drum-array
-         snare-array
-         sampling-frequency)
+         snare-array)
 
 (define (sample-period freq)
   (ri^ round.f32 f32 (fdiv (fl32 (exact->inexact (sampling-frequency))) freq)))

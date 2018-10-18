@@ -5,6 +5,7 @@
          "note.rkt"
          "wave-params.rkt"
          "wave-sham.rkt")
+(provide (all-defined-out))
 
 ;; sham function: (frequency f32) (nsamples i32) (wavef (f32 i32 -> f32)) (output f32*) (offset i32)
 ;; starting at i 0->nsamples, output[i+offset] = wavef(i)

@@ -3,7 +3,7 @@
 (require
  ;; "../sham/main.rkt"
  "../sham/private/ast-utils.rkt"
- "sequencer.rkt"
+ "note.rkt"
  "signals.rkt"
  "wave-params.rkt")
 (require ffi/unsafe)
@@ -70,7 +70,7 @@
           signal->integer
           map-s->i
           ))
-  (define test-mod-env (compile-module test-module))
+  (define test-mod-env (jit-module-compile test-module))
   (jit-verify-module test-mod-env)
   (optimize-module test-mod-env #:opt-level 3)
   (initialize-jit! test-mod-env)
