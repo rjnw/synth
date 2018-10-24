@@ -1,5 +1,6 @@
 #lang racket
-
+(require "../sham/private/parameters.rkt"
+         "../sham/private/ast-utils.rkt")
 (provide (all-defined-out))
 
 (define sampling-frequency (make-parameter 44100))
@@ -12,3 +13,5 @@
 
 (define (seconds->samples s)
   (inexact->exact (round (* s (sampling-frequency)))))
+
+(current-sham-module (create-empty-sham-module "synth"))

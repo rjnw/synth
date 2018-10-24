@@ -2,6 +2,7 @@
 
 (require "../sham/main.rkt"
          "../sham/private/ast-utils.rkt"
+         "../sham/private/jit-utils.rkt"
          "signals.rkt"
          "wave-builder.rkt"
          "wave-params.rkt"
@@ -12,25 +13,24 @@
 (provide emit)
 (require ffi/unsafe)
 
-(define (compile-signal signal total-weight)
-  (match signal
-    [(signal:sequence n pat tempo wave)
-     (build-sequence n pat tempo wave total-weight)]
-    [(signal:mix ss)
-     (define weights (map signal:weighted-w ss))
-     ;; (define signals (map car ss))
-     (define downscale-ratio (/ 1.0 (apply + weights)))
-     (define-values (lower-funcs ssfs)
-       (for/fold ([lower-funcs '()]
-                  [ssfs '()])
-                 ([ws ss])
-         (match-define (signal:weighted s w) ws)
-         (define-values (f lfs) (compile-signal s (* w downscale-ratio total-weight)))
-         (values (append lfs lower-funcs) (cons f ssfs))))
-
-     (build-mix ssfs total-weight)]
-    [(signal:drum n pat tempo)
-     (build-drum n pat tempo total-weight)]))
+(define (compile-signal signal (total-weight 1.0))
+  (define f
+    (match signal
+      [(signal:sequence n pat tempo wave)
+       (build-sequence n pat tempo (lookup-wave wave) total-weight)]
+      [(signal:mix ss)
+       (define weights (map signal:weighted-w ss))
+       (define downscale-ratio (/ 1.0 (apply + weights)))
+       (define ssfs
+         (map (λ (ws)
+                (match-define (signal:weighted s w) ws)
+                (compile-signal s (* w downscale-ratio total-weight)))
+              ss))
+       (build-mix ssfs)]
+      [(signal:drum n pat tempo)
+       (build-drum n pat tempo total-weight)]))
+  (add-to-sham-module! (current-sham-module) f)
+  f)
 
 (define (total-samples signals)
   (define (samples-per-beat tempo)
@@ -54,70 +54,45 @@
         empty-stream
         (stream-cons (ptr-ref memory-block _uint offset)
                      (mblock-stream (add1 offset)))))
-  (define-values (seq-funs main-id)
-    (compile-signal signal 1.0))
-  (define signal-module
-    (s$:dmodule
-     (empty-mod-env-info) 'signal-module
-     (append
-      (list
-       sine-wave
-       square-wave
-       triangle-wave
-       sawtooth-wave
-       synthesize-note
-       signal->integer
-       get-signal
-       set-signal
-       map-s->i)
-      seq-funs)))
-  (define mod-env (jit-module-compile signal-module))
-  (jit-verify-module mod-env)
-  (optimize-module mod-env #:opt-level 3 #:size-level 3 #:loop-vec #t)
-  ;; (jit-verify-module mod-env)
-  ;; (jit-dump-module mod-env)
-  (initialize-jit! mod-env)
-  (define mainf (jit-get-function main-id mod-env))
-  (define ms->i (jit-get-function 'map-s->i mod-env))
-  (mainf memory-block 0)
-  (ms->i memory-block 0.3 nsamples)
+
+  (define mainf (compile-signal signal))
+
+  (parameterize
+      ([compile-options `(dump pretty mc-jit ,@(compile-options))])
+      (compile-sham-module!
+       (current-sham-module)
+       #:opt-level 3 #:size-level 3
+       #:loop-vec #f))
+
+  (sham-app mainf memory-block 0)
+  (sham-app map-s->i memory-block 0.3 nsamples)
+
   (define signal-stream (mblock-stream 0))
   (with-output-to-file file-name #:exists 'replace
     (λ () (write-wav signal-stream)))
-  (printf "done writing, freeing memory.\n")
-  (free memory-block)
-  (values mainf mod-env))
+  (free memory-block))
+
+
 
 (module+ test
-
   (require ffi/unsafe
            rackunit)
 
-  (define s
-    '(
-      (sequence
+  (define ft
+    '((sequence
        1
        (
-        (60 . 1) (#f . 1) (60 . 1) (#f . 1) (58 . 1) (#f . 1)
+        (60 . 5) (#f . 1) (60 . 1) (#f . 1) (58 . 1) (#f . 1)
         (60 . 1) (#f . 3) (55 . 1) (#f . 3) (55 . 1) (#f . 1)
         (60 . 1) (#f . 1) (65 . 1) (#f . 1) (64 . 1) (#f . 1)
         (60 . 1) (#f . 9))
        380
        sawtooth-wave)
-      (drum 8 (O #f #f #f X #f #f #f) 380)
-      )
-    ;; `(sequence 1
-    ;;            (
-    ;;             (60 . 1) (#f . 1) (60 . 1) (#f . 1) (58 . 1) (#f . 1)
-    ;;             (60 . 1) (#f . 3) (55 . 1) (#f . 3) (55 . 1) (#f . 1)
-    ;;             (60 . 1) (#f . 1) (65 . 1) (#f . 1) (64 . 1) (#f . 1)
-    ;;             (60 . 1) (#f . 9))
-    ;;            380
-    ;;            sine-wave)
-    )
-  (define-values (mainf mod-env) (time (emit s "funky-town-sham.wav")))
+      (drum 8 (O #f #f #f X #f #f #f) 380)))
+  (emit ft "funky-town-sham.wav")
 
-  (define sm
+
+  (define m
     '((mix
        (((sequence 1 (((36 40 43) . 3) ((38 42 45) . 3)) 60 sine) . 1)
         ((sequence
@@ -127,28 +102,5 @@
           square)
          .
          3)))))
-  ;; (define-values (mainf mod-env mblock) (time (emit sm "melody-sham.wav")))
-
-  ;; (define s-note (jit-get-function 'synthesize-note mod-env))
-  ;; (define sine-wave (jit-get-function 'sine-wave mod-env))
-  ;; (define sine-wavef-ptr (jit-get-function-ptr 'sine-wave mod-env))
-  ;; (define s->i (jit-get-function 'signal->integer mod-env))
-  ;; (define ms->i (jit-get-function 'map-s->i mod-env))
-  ;; (define gs (jit-get-function 'get-signal mod-env))
-  ;; (define ss! (jit-get-function 'set-signal mod-env))
-
-  ;; (define nsamples (total-samples (normalize s)))
-
-  ;; (define mblock (malloc _float nsamples))
-
-  ;; (begin (memset mblock 0 nsamples _float)
-  ;;        (s-note 4.0 3 1.0 sine-wavef-ptr mblock 0))
-  ;; (check-= (ptr-ref mblock _float 2) (sine-wave 2 4.0) 0.00000001)
-
-  ;; (memset mblock 0 nsamples _float)
-  ;; (mainf mblock 0)
-  ;; (pretty-display (cblock->list mblock _float 10))
-
-  ;; (ms->i mblock 0.3 nsamples)
-  ;; (pretty-display (cblock->list mblock _uint 10))
+  ;; (emit m "melody-sham.wav")
   )

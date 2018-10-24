@@ -17,8 +17,6 @@
   (store! (fadd (load-signal s i) v)
              (gep^ s i)))
 
-(current-sham-module (create-empty-sham-module "prelude"))
-
 (define-sham-function (get-signal (cblock : f32*) (index : i32)) : f32
   (return (load-signal cblock index)))
 (define-sham-function (set-signal (cblock : f32*) (index : i32) (value : f32)) : tvoid

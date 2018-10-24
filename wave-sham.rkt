@@ -3,10 +3,12 @@
 (require
  "wave-params.rkt"
  "../sham/private/ast-utils.rkt"
+ "../sham/private/jit-utils.rkt"
  "drum.rkt"
  ffi/unsafe)
 
-(provide sine-wave
+(provide lookup-wave
+         sine-wave
          sawtooth-wave
          triangle-wave
          square-wave
@@ -45,6 +47,14 @@
                (if^ (fcmp-ugt (x* x freq) (sample-period/2 freq))
                     (ret (fl32 -1.0))
                     (ret (fl32 1.0))))
+
+(define (lookup-wave w)
+  (match w
+    ['sawtooth-wave sawtooth-wave]
+    ['sine-wave sine-wave]
+    ['triangle-wave triangle-wave]
+    ['square-wave square-wave]))
+
 
 (define bass-drum-array (ptrcast (rptr->llvmptr (list->cblock bass-drum _float)) (etype i8*) (etype f32*)))
 (define snare-array (ptrcast (rptr->llvmptr (list->cblock snare _float)) (etype i8*) (etype f32*)))

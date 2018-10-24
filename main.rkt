@@ -1,7 +1,7 @@
 #lang racket
 
-(require "synth-sham.rkt" "sequencer.rkt" "mixer.rkt" "drum.rkt" "wave-params.rkt")
-(provide (all-from-out "sequencer.rkt" "synth-sham.rkt")
+(require "synth-sham.rkt" "wave-params.rkt" "note.rkt")
+(provide  (all-from-out "note.rkt")
          (rename-out [mix/export            mix]
                      [sequence/export       sequence]
                      [drum/export           drum]
@@ -27,27 +27,24 @@
  (define-syntax-class sequend
    #:attributes (res)
    (pattern (~datum #f) ; break of 1 unit
-            #:with res #''[(#f . 1)])
+            #:with res #'(cons #f 1))
    (pattern [(~datum #f) len:expr]
-            #:with res #'`[,(cons #f len)])
+            #:with res #'(cons #f len))
    (pattern ((~literal chord) root octave duration type notes* ...)
-            ;; TODO this syntax is not as nice as the others
-            #:with res #'`[,(chord 'root octave duration 'type notes* ...)])
+            #:with res #'(chord 'root octave duration 'type notes* ...))
    (pattern ((~literal scale) root octave duration type notes* ...)
-            ;; TODO this syntax is not as nice as the others
             #:with res #'(scale 'root octave duration 'type notes* ...))
    (pattern [n:id octave:expr] ; note of 1 unit
-            ;; TODO id is too permissive
-            #:with res #'`[,(note 'n octave 1)])
+            #:with res #'(note 'n octave 1))
    (pattern [n:id octave:expr len:expr]
-            #:with res #'`[,(note 'n octave len)])))
+            #:with res #'(note 'n octave len))))
 
 (define-syntax (sequence/export stx)
   (syntax-parse stx
     ;; TODO OoO keywords, support for repetitions, optional #:times
     [(_ function:id (~datum #:times) times:expr
         [note:sequend ...])
-     #'`(sequence times ,(append note.res ...) ,(current-bpm) function)]))
+     #'`(sequence times ,(list note.res ...) ,(current-bpm) function)]))
 
 (define-syntax (drum/export stx)
   (syntax-parse stx
@@ -67,3 +64,14 @@
             ([current-bpm (syntax-rules () [(_) bpm])])
           (emit (list signal ...) output)
           (void)))]))
+
+(module+ test
+  (syntax-parameterize
+      ([current-bpm (syntax-rules () [(_) 0])])
+    (mix/export (sequence/export sine-wave #:times 1
+                                 [(chord C 3 3 major-arpeggio)
+                                  (chord D 3 3 major-arpeggio)])
+                [(sequence/export square-wave #:times 1
+                                  [(C 4) (D 4) (E 4)
+                                         (G 4) (E 4) (C 4)])
+                 #:weight 3])))
