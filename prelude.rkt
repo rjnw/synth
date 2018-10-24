@@ -3,6 +3,7 @@
 (require
  ;; "../sham/main.rkt"
  "../sham/private/ast-utils.rkt"
+ "../sham/private/parameters.rkt"
  "note.rkt"
  "signals.rkt"
  "wave-params.rkt")
@@ -16,6 +17,7 @@
   (store! (fadd (load-signal s i) v)
              (gep^ s i)))
 
+(current-sham-module (create-empty-sham-module "prelude"))
 
 (define-sham-function (get-signal (cblock : f32*) (index : i32)) : f32
   (return (load-signal cblock index)))
@@ -60,33 +62,33 @@
                      (set!^ ni (add-nuw ni (ui32 1))))
          return-void))
 
-(module+ test
-  (require "../sham/main.rkt")
-  (define-module test-module
-    (empty-mod-env-info)
-    (list get-signal
-          set-signal
-          synthesize-note
-          signal->integer
-          map-s->i
-          ))
-  (define test-mod-env (jit-module-compile test-module))
-  (jit-verify-module test-mod-env)
-  (optimize-module test-mod-env #:opt-level 3)
-  (initialize-jit! test-mod-env)
-  (jit-dump-module test-mod-env)
+;; (module+ test
+;;   (require "../sham/main.rkt")
+;;   (define-module test-module
+;;     (empty-mod-env-info)
+;;     (list get-signal
+;;           set-signal
+;;           synthesize-note
+;;           signal->integer
+;;           map-s->i
+;;           ))
+;;   (define test-mod-env (jit-module-compile test-module))
+;;   (jit-verify-module test-mod-env)
+;;   (optimize-module test-mod-env #:opt-level 3)
+;;   (initialize-jit! test-mod-env)
+;;   (jit-dump-module test-mod-env)
 
-  (define gs (jit-get-function 'get-signal test-mod-env))
-  (define ss! (jit-get-function 'set-signal test-mod-env))
-
-
-  (define s-note (jit-get-function 'synthesize-note test-mod-env))
-  (define s->i (jit-get-function 'signal->integer test-mod-env))
-  (define ms->i (jit-get-function 'map-s->i test-mod-env))
+;;   (define gs (jit-get-function 'get-signal test-mod-env))
+;;   (define ss! (jit-get-function 'set-signal test-mod-env))
 
 
+;;   (define s-note (jit-get-function 'synthesize-note test-mod-env))
+;;   (define s->i (jit-get-function 'signal->integer test-mod-env))
+;;   (define ms->i (jit-get-function 'map-s->i test-mod-env))
 
-  (define mblock (malloc _double 10000))
-  (memset mblock 0 10000 _double)
 
-  )
+
+;;   (define mblock (malloc _double 10000))
+;;   (memset mblock 0 10000 _double)
+
+;;   )
