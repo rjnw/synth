@@ -1,0 +1,45 @@
+* comparison funky-town
+first row is the total number of repeating sequence
+|  n | sham |   rkt |
+|  1 | 2.61 |  9.85 |
+|  2 | 2.61 | 10.51 |
+|  5 | 2.77 | 20.65 |
+| 10 | 2.92 | 40.71 |
+| 20 | 3.32 | 91.38 |
+
+
+* sham detailed
+first is time for generating sham ast
+second is compiling with llvm
+third is running the program
+fourth is writing to disk
+** 20
+cpu time: 1 real time: 0 gc time: 0
+cpu time: 45 real time: 46 gc time: 0
+cpu time: 98 real time: 98 gc time: 0
+cpu time: 755 real time: 756 gc time: 8
+racket funky-town.rkt  3.32s user 0.31s system 99% cpu 3.649 total
+** 10
+cpu time: 1 real time: 1 gc time: 0
+cpu time: 40 real time: 41 gc time: 0
+cpu time: 70 real time: 71 gc time: 0
+cpu time: 382 real time: 383 gc time: 6
+racket funky-town.rkt  2.92s user 0.25s system 99% cpu 3.202 total
+** 5
+cpu time: 1 real time: 1 gc time: 0
+cpu time: 45 real time: 46 gc time: 0
+cpu time: 60 real time: 61 gc time: 0
+cpu time: 199 real time: 204 gc time: 7
+racket funky-town.rkt  2.77s user 0.28s system 99% cpu 3.083 total
+** 2
+cpu time: 0 real time: 1 gc time: 0
+cpu time: 42 real time: 42 gc time: 0
+cpu time: 53 real time: 53 gc time: 0
+cpu time: 85 real time: 85 gc time: 8
+racket funky-town.rkt  2.61s user 0.30s system 99% cpu 2.932 total
+** 1
+cpu time: 0 real time: 1 gc time: 0
+cpu time: 43 real time: 42 gc time: 0
+cpu time: 49 real time: 50 gc time: 0
+cpu time: 79 real time: 79 gc time: 0
+racket funky-town.rkt  2.61s user 0.23s system 98% cpu 2.869 total
