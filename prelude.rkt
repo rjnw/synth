@@ -4,6 +4,7 @@
  ;; "../sham/main.rkt"
  "../sham/private/ast-utils.rkt"
  "../sham/private/parameters.rkt"
+ "../sham/private/info.rkt"
  "note.rkt"
  "signals.rkt"
  "wave-params.rkt")
@@ -26,8 +27,28 @@
 (define wave-type (tptr (tfun (list i32 f32) f32)))
 ;; sham function: (frequency f32) (nsamples i32) (wavef (f32 i32 -> f32)) (output f32*) (offset i32)
 ;; starting at i 0->nsamples, output[i+offset] = wavef(i)
+;; (define (synthesize-note wavef)
+;;   (define f (sham-function
+;;              ;; #:info (function-info-add-attributes (empty-function-info) 'alwaysinline)
+;;              [,(gensym 'synthesize-note) (freq : f32) (nsamples : i32) (total-weight : f32)
+;;                                          ;; (wavef : wave-type)
+;;                                          (output : f32*) (offset : i32)] : tvoid
+;;              (slet^ ([ni (ui32 0) : i32])
+;;                     (while-ule^ ni nsamples
+;;                                 (add-signal! output
+;;                                              (add-nuw ni offset)
+;;                                              (fmul (wavef ni freq)
+;;                                                    total-weight))
+;;                                 (set!^ ni (add-nuw ni (ui32 1))))
+;;                     return-void)))
+;;   ;; (add-to-sham-module! (current-sham-module) f)
+;;   f)
+
 (define-sham-function
-  (synthesize-note (freq : f32) (nsamples : i32) (total-weight : f32) (wavef : wave-type) (output : f32*) (offset : i32)) : tvoid
+  ;; #:info (function-info-add-attributes (empty-function-info) 'alwaysinline)
+  (synthesize-note-simple (freq : f32) (nsamples : i32) (total-weight : f32)
+                           (wavef : wave-type)
+                           (output : f32*) (offset : i32)) : tvoid
   (slet^ ([ni (ui32 0) : i32])
          (while-ule^ ni nsamples
                      (add-signal! output
@@ -36,6 +57,25 @@
                                         total-weight))
                      (set!^ ni (add-nuw ni (ui32 1))))
          return-void))
+
+;; (define-sham-function
+;;   (synthesize-note-orig (freq : f32) (nsamples : i32) (total-weight : f32)
+;;                         (wavef : wave-type)
+;;                         (output : f32*) (offset : i32)) : tvoid
+;;   ((synthesize-note (lambda (x y) (app^ wavef x y)))
+;;    #:inline 1 freq nsamples total-weight output offset)
+;;   (block^ return-void)
+
+;;   ;; (slet^ ([ni (ui32 0) : i32])
+;;   ;;                   (while-ule^ ni nsamples
+;;   ;;                               (add-signal! output
+;;   ;;                                            (add-nuw ni offset)
+;;   ;;                                            (fmul (app^ wavef ni freq)
+;;   ;;                                                  total-weight))
+;;   ;;                               (set!^ ni (add-nuw ni (ui32 1))))
+;;   ;;                   return-void)
+;;   )
+
 
 (define-sham-function
   (signal->integer (x : f32) (gain : f32)) : i32
@@ -58,7 +98,8 @@
                             [casted-wave (ptrcast wave (etype i32*)) : i32*])
                            (store! nv (gep^ casted-wave ni)))
                      (set!^ ni (add-nuw ni (ui32 1))))
-         return-void))
+         return-void
+         ))
 
 ;; (module+ test
 ;;   (require "../sham/main.rkt")

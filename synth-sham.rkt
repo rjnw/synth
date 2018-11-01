@@ -1,6 +1,7 @@
 #lang racket
 
 (require "../sham/main.rkt"
+         "../sham/private/parameters.rkt"
          "../sham/private/ast-utils.rkt"
          "../sham/private/jit-utils.rkt"
          "signals.rkt"
@@ -55,24 +56,27 @@
         (stream-cons (ptr-ref memory-block _uint offset)
                      (mblock-stream (add1 offset)))))
 
-  (define mainf (compile-signal signal))
+  (define mainf
+    (time (compile-signal signal)))
 
-  (parameterize
-      ([compile-options `(dump pretty mc-jit ,@(compile-options))])
-      (compile-sham-module!
-       (current-sham-module)
-       #:opt-level 3 #:size-level 3
-       #:loop-vec #f))
+  (time
+   (parameterize
+       ([compile-options `(;; dump verify pretty
+                           mc-jit
+                           ,@(compile-options))])
+     (compile-sham-module!
+      (current-sham-module)
+      #:opt-level 3 #:size-level 3
+      #:loop-vec #f)))
 
-  (sham-app mainf memory-block 0)
-  (sham-app map-s->i memory-block 0.3 nsamples)
+  (time (begin (sham-app mainf memory-block 0)
+               (sham-app map-s->i memory-block 0.3 nsamples)))
 
   (define signal-stream (mblock-stream 0))
-  (with-output-to-file file-name #:exists 'replace
-    (λ () (write-wav signal-stream)))
-  (free memory-block))
-
-
+  (time (with-output-to-file file-name #:exists 'replace
+     (λ () (write-wav memory-block nsamples))))
+  (free memory-block)
+  )
 
 (module+ test
   (require ffi/unsafe
@@ -80,15 +84,18 @@
 
   (define ft
     '((sequence
-       1
+       10
        (
-        (60 . 5) (#f . 1) (60 . 1) (#f . 1) (58 . 1) (#f . 1)
+        (60 . 5)
+        (#f . 1) (60 . 1) (#f . 1) (58 . 1) (#f . 1)
         (60 . 1) (#f . 3) (55 . 1) (#f . 3) (55 . 1) (#f . 1)
         (60 . 1) (#f . 1) (65 . 1) (#f . 1) (64 . 1) (#f . 1)
-        (60 . 1) (#f . 9))
+        (60 . 1) (#f . 9)
+        )
        380
        sawtooth-wave)
-      (drum 8 (O #f #f #f X #f #f #f) 380)))
+      ;; (drum 8 (O #f #f #f X #f #f #f) 380)
+      ))
   (emit ft "funky-town-sham.wav")
 
 

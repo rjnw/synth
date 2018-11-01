@@ -4,6 +4,7 @@
  "wave-params.rkt"
  "../sham/private/ast-utils.rkt"
  "../sham/private/jit-utils.rkt"
+ "../sham/private/info.rkt"
  "drum.rkt"
  ffi/unsafe)
 
@@ -32,6 +33,7 @@
                   (ui->fp  x (etype f32))))))
 
 (define-sham-function
+  #:info (function-info-add-attributes (empty-function-info) 'alwaysinline)
   (sawtooth-wave [x : i32] [freq : f32]) : f32
   (ret (fsub (fdiv (x* x freq) (sample-period/2 freq))
              (fl32 1.0))))

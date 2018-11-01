@@ -7,14 +7,14 @@
 
 (provide write-wav)
 (require racket/sequence)
-
+(require ffi/unsafe)
 ;; A WAVE file has 3 parts:
 ;;  - the RIFF header: identifies the file as WAVE
 ;;  - fmt subchunk: describes format of the data subchunk
 ;;  - data subchunk
 
 ;; data : sequence of 32-bit unsigned integers
-(define (write-wav data
+(define (write-wav data nsamples
                    #:num-channels    [num-channels    1] ; 1 = mono, 2 = stereo
                    #:sample-rate     [sample-rate     44100]
                    #:bits-per-sample [bits-per-sample 16])
@@ -23,7 +23,7 @@
   (define (write-integer-bytes i [size 4])
     (write-bytes (integer->integer-bytes i size #f)))
   (define data-subchunk-size
-    (* (sequence-length data) num-channels (/ bits-per-sample 8)))
+    (* nsamples num-channels (/ bits-per-sample 8)))
 
   ;; RIFF header
   (write-bytes #"RIFF")
@@ -48,5 +48,6 @@
   ;; data subchunk
   (write-bytes #"data")
   (write-integer-bytes data-subchunk-size)
-  (for ([sample data])
-    (write-integer-bytes sample bytes-per-sample)))
+  (for ([i (in-range nsamples)])
+      ;; ([sample data])
+    (write-integer-bytes (ptr-ref data _uint i) bytes-per-sample)))
