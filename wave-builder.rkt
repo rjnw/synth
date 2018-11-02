@@ -34,7 +34,7 @@
                                              [(list? notes)
                                               (append (for/list ([n notes])
                                                         (synthesize-note-simple
-                                                         ;; #:specialize '(3)
+                                                         #:specialize '(3)
                                                          ;; #:try-inline 'wave
                                                          (fl32 (note-freq n))
                                                          (ui32 nsamples)
@@ -88,3 +88,11 @@
                 (set!^ w (add-nuw w (ui32 1)))
                 (set!^ offset (add-nuw offset (ui32 (* samples-per-beat (length pattern)))))))
    ret-void))
+
+(define (build-main entry-signal memory-block nsamples)
+  (sham-function (,(gensym 'main)) : tvoid
+                 (entry-signal #:specialize '(0) (ptrcast memory-block (etype f32*)) (ui32 0))
+                 (map-s->i
+                  #:specialize '(0)
+                  (ptrcast memory-block (etype f32*)) (fl32 0.3) (ui32 nsamples))
+                 ret-void))

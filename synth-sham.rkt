@@ -48,6 +48,7 @@
   (define signal (normalize signal-sym))
   (define nsamples (total-samples signal))
   (define memory-block (malloc _double nsamples 'raw))
+  (define llvm-memory-block (ptrcast (rptr->llvmptr memory-block) (etype i8*) (etype f32*)))
   (memset memory-block 0 nsamples _float)
 
   (define (mblock-stream offset)
@@ -56,8 +57,9 @@
         (stream-cons (ptr-ref memory-block _uint offset)
                      (mblock-stream (add1 offset)))))
 
-  (define mainf
-    (time (compile-signal signal)))
+  (define entry-signal (compile-signal signal))
+  (define main-entry (build-main entry-signal llvm-memory-block nsamples))
+  (add-to-sham-module! (current-sham-module) main-entry)
 
   (time
    (parameterize
@@ -69,12 +71,14 @@
       #:opt-level 3 #:size-level 3
       #:loop-vec #f)))
 
-  (time (begin (sham-app mainf memory-block 0)
-               (sham-app map-s->i memory-block 0.3 nsamples)))
+  (time (begin
+          ;; (sham-app entry-signal memory-block 0)
+          (sham-app main-entry)
+          (sham-app map-s->i memory-block 0.3 nsamples)))
 
   (define signal-stream (mblock-stream 0))
   (time (with-output-to-file file-name #:exists 'replace
-     (λ () (write-wav memory-block nsamples))))
+          (λ () (write-wav memory-block nsamples))))
   (free memory-block)
   )
 
