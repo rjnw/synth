@@ -27,15 +27,21 @@
     ['sine
      (sin (* (exact->inexact (/ (* freq 2.0 pi) (sampling-frequency)))
              (exact->inexact x)))]))
+(define (add-signal! output i val)
+  (vector-set! (+ val (vector-ref output i)) ))
+(define (interp-note freq nsamples total-weight wave output offset)
+  (for ([ni nsamples])
+    (add-signal! output (+ ni offset) (* total-weight (build-wave freq ni)))))
 
 (define (interp-sequence n pattern tempo wave total-weight)
   (printf "interp-sequence: n: ~a, pattern: ~a, tempo: ~a, wave: ~a\n" n pattern tempo wave)
+  (define samples-per-beat (quotient (* (sampling-frequency) 60) tempo))
   (λ (output offset)
     (for ([i (in-range n)])
       (for/fold ([ofst offset])
                 ([p pattern])
         (match-define (signal:chord notes beats) p)
-        (define nsamples (* samples-per-beat beat))
+        (define nsamples (* samples-per-beat beats))
         (cond  [(false? notes) (void)]
                [(list? notes)
                 (for ([n notes])

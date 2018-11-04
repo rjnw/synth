@@ -50,6 +50,7 @@
     ['sine
      (sin (* (exact->inexact (/ (* freq 2.0 pi) (sampling-frequency)))
              (exact->inexact x)))]))
+
 (define (interp-sequence n pattern tempo wave)
   (printf "interp-sequence: n: ~a, pattern: ~a, tempo: ~a, wave: ~a\n" n pattern tempo wave)
   (define samples-per-beat (quotient (* (sampling-frequency) 60) tempo))

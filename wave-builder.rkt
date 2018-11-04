@@ -33,7 +33,7 @@
                                        (cond [(false? notes) apps]
                                              [(list? notes)
                                               (append (for/list ([n notes])
-                                                        (synthesize-note-simple
+                                                        (synthesize-note
                                                          #:specialize '(3)
                                                          ;; #:try-inline 'wave
                                                          (fl32 (note-freq n))
