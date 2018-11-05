@@ -48,6 +48,10 @@
   ;; data subchunk
   (write-bytes #"data")
   (write-integer-bytes data-subchunk-size)
-  (for ([i (in-range nsamples)])
-      ;; ([sample data])
-    (write-integer-bytes (ptr-ref data _uint i) bytes-per-sample)))
+  (if (vector? data)
+      (for ([i (in-range nsamples)])
+        ;; ([sample data])
+        (write-integer-bytes (vector-ref data i) bytes-per-sample))
+      (for ([i (in-range nsamples)])
+        ;; ([sample data])
+        (write-integer-bytes (ptr-ref data _uint i) bytes-per-sample))))

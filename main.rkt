@@ -1,6 +1,6 @@
 #lang racket
 
-(require "synth-sham.rkt" "wave-params.rkt" "note.rkt")
+(require "synth-sham.rkt" "wave-params.rkt" "note.rkt" "synth-interp-vector.rkt")
 (provide  (all-from-out "note.rkt")
          (rename-out [mix/export            mix]
                      [sequence/export       sequence]
@@ -57,12 +57,14 @@
 
 (define-syntax (#%module-begin/export stx)
   (syntax-parse stx
-    [(_ #:output output:expr #:bpm bpm:expr
+    [(_ #:output output:expr #:bpm bpm:expr #:runner runner:expr
         signal ...)
      #'(#%module-begin
         (syntax-parameterize
             ([current-bpm (syntax-rules () [(_) bpm])])
-          (emit (list signal ...) output)
+          (if (equal? runner 'interp)
+              (emit-interp (list signal ...) output)
+              (emit (list signal ...) output))
           (void)))]))
 
 (module+ test

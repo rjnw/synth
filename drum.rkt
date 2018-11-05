@@ -4,8 +4,7 @@
 
 (require "wave-params.rkt")
 
-(provide bass-drum
-         snare)
+(provide bass-drum bass-drum-vector snare snare-vector)
 
 (define (random-sample) (- (* 2.0 (random)) 1.0))
 
@@ -23,9 +22,11 @@
                  #:when #t
                  [j (in-range 12)])
                 sample))))
+(define bass-drum-vector (list->vector bass-drum))
 (define snare
   ;; 0.05 seconds of noise
   (for/list [(i (in-range (seconds->samples 0.05)))] (random-sample)))
+(define snare-vector (list->vector snare))
 
 ;; limited drum machine
 ;; drum patterns are simply lists with either O (bass drum), X (snare) or
