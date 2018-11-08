@@ -50,11 +50,15 @@
   (define memory-block (malloc _double nsamples 'raw))
   (define llvm-memory-block (ptrcast (rptr->llvmptr memory-block) (etype i8*) (etype f32*)))
   (memset memory-block 0 nsamples _float)
-
-  (define entry-signal (compile-signal signal))
+  (printf "nsamples: ~a\n" nsamples)
+  (collect-garbage 'major)
+  (printf "generating staged code: ")
+  (define entry-signal
+    (time (compile-signal signal)))
   (define main-entry (build-main entry-signal llvm-memory-block nsamples))
   (add-to-sham-module! (current-sham-module) main-entry)
 
+  (printf "compiling with llvm: ")
   (time
    (parameterize
        ([compile-options `(;; dump verify pretty
@@ -64,17 +68,17 @@
       (current-sham-module)
       #:opt-level 3 #:size-level 3
       #:loop-vec #f)))
-
+  (collect-garbage 'major)
+  (printf "running synth: ")
   (time (begin
           ;; (sham-app entry-signal memory-block 0)
           ;; (sham-app map-s->i memory-block 0.3 nsamples)
-          (sham-app main-entry)
-          ))
-
+          (sham-app main-entry)))
+  (collect-garbage 'major)
+  (printf "writing to disk: ")
   (time (with-output-to-file file-name #:exists 'replace
           (λ () (write-wav memory-block nsamples))))
-  (free memory-block)
-  )
+  (free memory-block))
 
 (module+ test
   (require ffi/unsafe

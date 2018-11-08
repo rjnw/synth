@@ -34,7 +34,7 @@
   (vector-set! output i (+ val (vector-ref output i))))
 (define (get-signal output i)
   (vector-ref output i))
-(define (interp-note freq nsamples total-weight wave output offset)
+(define (synthesize-note freq nsamples total-weight wave output offset)
   (for ([ni nsamples])
     (add-signal! output (+ ni offset) (* total-weight (build-wave wave freq ni)))))
 
@@ -49,7 +49,7 @@
         (cond  [(false? notes) (void)]
                [(list? notes)
                 (for ([n notes])
-                  (interp-note (note-freq n) nsamples
+                  (synthesize-note (note-freq n) nsamples
                                (/ total-weight (exact->inexact (length notes))) wave output ofst))])
         (+ ofst nsamples)))))
 (define (interp-mix ssfs)
@@ -89,22 +89,30 @@
 
 
 (define (total-samples signals)
-  (define (samples-per-beat tempo) (quotient (* (sampling-frequency) 60) tempo))
+  (define (samples-per-beat tempo)
+    (quotient (* (sampling-frequency) 60) tempo))
   (define (samples-in-pat pat tempo)
     (foldr (λ (p t) (+ t (* (samples-per-beat tempo) (signal:chord-beats p)))) 0 pat))
   (match signals
-    [(signal:mix sgnls) (apply max (map total-samples sgnls))]
-    [(signal:sequence n pat tempo wave) (* (samples-in-pat pat tempo))]
     [(signal:weighted s w) (total-samples s)]
+    [(signal:sequence n pat tempo wave) (* n (samples-in-pat pat tempo))]
+    [(signal:mix ss) (apply max (map total-samples ss))]
     [(signal:drum n pat tempo) (* n (length pat) (samples-per-beat tempo))]))
 
 (define (emit-interp signal-sym file-name)
   (define signal (normalize signal-sym))
   (define nsamples (total-samples signal))
   (define block (build-vector  nsamples (const 0)))
-  (define entry-signal (interp-signal signal))
-  (time (entry-signal block 0))
-  (time (signal->integer-sequence block #:gain 0.3))
+  (printf "nsamples: ~a\n" nsamples)
+  (collect-garbage 'major)
+  (printf "generating staged code: ")
+  (define entry-signal (time (interp-signal signal)))
+  (collect-garbage 'major)
+  (printf "running synth: ")
+  (time (begin (entry-signal block 0)
+               (signal->integer-sequence block #:gain 0.3)))
+  (collect-garbage 'major)
+  (printf "writing to disk: ")
   (time (with-output-to-file file-name #:exists 'replace
           (λ () (write-wav block nsamples)))))
 

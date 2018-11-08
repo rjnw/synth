@@ -23,33 +23,34 @@
 
    (slet^ ([ni (ui32 0) : i32])
           (while-ule^ ni (ui32 n)
-                      (block (for/fold ([ofst offset]
-                                        [apps '()]
+                      (block (for/fold ([apps '()]
+                                        [ofst offset]
                                         #:result (reverse apps))
                                        ([p pattern])
                                (match-define (signal:chord notes beats) p)
                                (define nsamples (* samples-per-beat beats))
-                               (values (add-nuw ofst (ui32 nsamples))
-                                       (cond [(false? notes) apps]
-                                             [(list? notes)
-                                              (append (for/list ([n notes])
-                                                        (synthesize-note
-                                                         #:specialize '(3)
-                                                         ;; #:try-inline 'wave
-                                                         (fl32 (note-freq n))
-                                                         (ui32 nsamples)
-                                                         (fdiv (fl32 total-weight)
-                                                               (fl32 (exact->inexact (length notes))))
-                                                         wave
-                                                         output
-                                                         ofst))
-                                                      apps)]))))
+                               (values
+                                (cond [(false? notes) apps]
+                                      [(list? notes)
+                                       (append (for/list ([n notes])
+                                                 (synthesize-note
+                                                  #:specialize '(3)
+                                                  ;; #:try-inline 'wave
+                                                  (fl32 (note-freq n))
+                                                  (ui32 nsamples)
+                                                  (fdiv (fl32 total-weight)
+                                                        (fl32 (exact->inexact (length notes))))
+                                                  wave
+                                                  output
+                                                  ofst))
+                                               apps)])
+                                (add-nuw ofst (ui32 nsamples)))))
                       (set!^ ni (add-nuw ni (ui32 1)))))
    ret-void))
 
 (define (build-mix ssfs (id (gensym 'mix)))
   (sham-function [,id (output : f32*) (offset : i32)] : tvoid
-              (block (map (λ (f) (f output offset)) ssfs))
+                 (block (for/list ([f ssfs]) (f output offset)) )
               ret-void))
 
 (define (build-drum n pattern tempo total-weight (id (gensym 'drum)))
@@ -91,8 +92,9 @@
 
 (define (build-main entry-signal memory-block nsamples)
   (sham-function (,(gensym 'main)) : tvoid
-                 (entry-signal #:specialize '(0) (ptrcast memory-block (etype f32*)) (ui32 0))
+                 (entry-signal ;; #:specialize '(0)
+                               (ptrcast memory-block (etype f32*)) (ui32 0))
                  (map-s->i
-                  #:specialize '(0)
+                  ;; #:specialize '(0)
                   (ptrcast memory-block (etype f32*)) (fl32 0.3) (ui32 nsamples))
                  ret-void))
