@@ -49,7 +49,8 @@
         (cond  [(false? notes) (void)]
                [(list? notes)
                 (for ([n notes])
-                  (interp-note (note-freq n) nsamples (/ total-weight (exact->inexact (length notes))) wave output ofst))])
+                  (interp-note (note-freq n) nsamples
+                               (/ total-weight (exact->inexact (length notes))) wave output ofst))])
         (+ ofst nsamples)))))
 (define (interp-mix ssfs)
   (λ (output offset)
