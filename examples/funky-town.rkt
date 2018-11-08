@@ -2,6 +2,7 @@
 
 #:output "funky-town.wav"
 #:bpm 380
+#:runner 'jit
 
 (sequence
   sawtooth-wave #:times 1
