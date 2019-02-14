@@ -2,9 +2,9 @@
 
 (require
  "wave-params.rkt"
- "../sham/private/ast-utils.rkt"
- "../sham/private/jit-utils.rkt"
- "../sham/private/info.rkt"
+ sham
+ sham/ast-utils
+ sham/jit-utils
  "drum.rkt"
  ffi/unsafe)
 
@@ -26,7 +26,7 @@
   (frem (ui->fp x (etype f32)) (sample-period freq)))
 
 (define-sham-function
-  (sine-wave [x : i32] [freq : f32]) : f32
+  (sine-wave [x : i32] [freq : f32] : f32)
   (ret (ri^ sin.f32 f32
             (fmul (fdiv (fmul freq (fl32 (* 2.0 pi)))
                         (fl32 (exact->inexact (sampling-frequency))))
@@ -34,18 +34,18 @@
 
 (define-sham-function
   #:info (function-info-add-attributes (empty-function-info) 'alwaysinline)
-  (sawtooth-wave [x : i32] [freq : f32]) : f32
+  (sawtooth-wave [x : i32] [freq : f32] : f32)
   (ret (fsub (fdiv (x* x freq) (sample-period/2 freq))
              (fl32 1.0))))
 
 (define-sham-function
-  (triangle-wave [x : i32] [freq : f32]) : f32
+  (triangle-wave [x : i32] [freq : f32] : f32)
    (if^ (fcmp-ugt (x* x freq) (sample-period/2 freq))
         (ret (fsub (fdiv (x* x freq) (sample-period/4 freq)) (fl32 3.0)))
         (ret (fadd (fdiv (x* x freq) (sample-period/4 freq)) (fl32 3.0)))))
 
 (define-sham-function
-  (square-wave [x : i32] [freq : f32]) : f32
+  (square-wave [x : i32] [freq : f32] : f32)
                (if^ (fcmp-ugt (x* x freq) (sample-period/2 freq))
                     (ret (fl32 -1.0))
                     (ret (fl32 1.0))))

@@ -1,7 +1,7 @@
 #lang racket
-(require "../sham/private/parameters.rkt"
-         "../sham/private/ast-utils.rkt"
-         "../sham/private/info.rkt")
+(require sham/ast-utils
+         sham/jit-utils
+         sham)
 (provide (all-defined-out))
 
 (define sampling-frequency (make-parameter 44100))

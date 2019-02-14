@@ -1,10 +1,9 @@
 #lang racket
 
 (require
- ;; "../sham/main.rkt"
- "../sham/private/ast-utils.rkt"
- "../sham/private/parameters.rkt"
- "../sham/private/info.rkt"
+ sham
+ sham/ast-utils
+ sham/jit-utils
  "note.rkt"
  "signals.rkt"
  "wave-params.rkt")
@@ -18,19 +17,19 @@
   (store! (fadd (load-signal s i) v)
              (gep^ s i)))
 
-(define-sham-function (get-signal (cblock : f32*) (index : i32)) : f32
+(define-sham-function (get-signal (cblock : f32*) (index : i32) : f32)
   (return (load-signal cblock index)))
-(define-sham-function (set-signal (cblock : f32*) (index : i32) (value : f32)) : tvoid
+(define-sham-function (set-signal (cblock : f32*) (index : i32) (value : f32) : tvoid)
   (store! value (gep^ cblock index))
-  return-void)
+  (return-void))
 
 (define wave-type (tptr (tfun (list i32 f32) f32)))
 
 (define-sham-function
   ;; #:info (function-info-add-attributes (empty-function-info) 'alwaysinline)
   (synthesize-note (freq : f32) (nsamples : i32) (total-weight : f32)
-                           (wavef : wave-type)
-                           (output : f32*) (offset : i32)) : tvoid
+                   (wavef : wave-type)
+                   (output : f32*) (offset : i32) : tvoid)
   (slet^ ([ni (ui32 0) : i32])
          (while-ule^ ni nsamples
                      (add-signal! output
@@ -38,10 +37,10 @@
                                   (fmul (app^ wavef ni freq)
                                         total-weight))
                      (set!^ ni (add-nuw ni (ui32 1))))
-         return-void))
+         (return-void)))
 
 (define-sham-function
-  (signal->integer (x : f32) (gain : f32)) : i32
+  (signal->integer (x : f32) (gain : f32) : i32)
   (slet^ ([nx (fp->ui
                (fmul gain
                      (fmul (fadd x (fl32 1.0))
@@ -53,7 +52,7 @@
               (return nx))))
 
 (define-sham-function
-  (map-s->i (wave : f32*) (gain : f32) (nsamples : i32)) : tvoid
+  (map-s->i (wave : f32*) (gain : f32) (nsamples : i32) : tvoid)
   (slet^ ([ni (ui32 0) : i32])
          (while-ule^ ni nsamples
                      (let^ ([nv (signal->integer (get-signal wave ni) gain)
@@ -61,8 +60,7 @@
                             [casted-wave (ptrcast wave (etype i32*)) : i32*])
                            (store! nv (gep^ casted-wave ni)))
                      (set!^ ni (add-nuw ni (ui32 1))))
-         return-void
-         ))
+         (return-void)))
 
 ;; (module+ test
 ;;   (require "../sham/main.rkt")

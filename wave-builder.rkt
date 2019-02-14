@@ -1,5 +1,5 @@
 #lang racket
-(require "../sham/private/ast-utils.rkt"
+(require sham/ast-utils
          "signals.rkt"
          "prelude.rkt"
          "note.rkt"
@@ -19,18 +19,19 @@
   ;;                    (lambda (f n t o of) (app^ synthesize-note-orig f n t wave o of))
   ;;                    ))
   (sham-function
-   [,id (output : f32*) (offset : i32)] : tvoid
+   [,id (output : f32*) (offset : i32) : tvoid]
 
    (slet^ ([ni (ui32 0) : i32])
           (while-ule^ ni (ui32 n)
                       (block (for/fold ([apps '()]
-                                        [ofst offset]
                                         #:result (reverse apps))
                                        ([p pattern])
                                (match-define (signal:chord notes beats) p)
                                (define nsamples (* samples-per-beat beats))
-                               (values
-                                (cond [(false? notes) apps]
+                               (cons
+                                (set!^ offset (add-nuw offset (ui32 nsamples)))
+                                (cond [(false? notes)
+                                       apps]
                                       [(list? notes)
                                        (append (for/list ([n notes])
                                                  (synthesize-note
@@ -42,14 +43,13 @@
                                                         (fl32 (exact->inexact (length notes))))
                                                   wave
                                                   output
-                                                  ofst))
-                                               apps)])
-                                (add-nuw ofst (ui32 nsamples)))))
+                                                  offset))
+                                               apps)]))))
                       (set!^ ni (add-nuw ni (ui32 1)))))
    ret-void))
 
 (define (build-mix ssfs (id (gensym 'mix)))
-  (sham-function [,id (output : f32*) (offset : i32)] : tvoid
+  (sham-function [,id (output : f32*) (offset : i32) : tvoid]
                  (block (for/list ([f ssfs]) (f output offset)) )
               ret-void))
 
@@ -69,7 +69,7 @@
                 (set!^ i (add-nuw i (ui32 1))))))
 
   (sham-function
-   (,id [output : f32*] [offset : i32]) :  tvoid
+   (,id [output : f32*] [offset : i32] : tvoid)
    (slet^
     ([w (ui32 0) : i32])
     (while-ule^ w (ui32 n)
@@ -91,7 +91,7 @@
    ret-void))
 
 (define (build-main entry-signal memory-block nsamples)
-  (sham-function (,(gensym 'main)) : tvoid
+  (sham-function (,(gensym 'main) : tvoid)
                  (entry-signal ;; #:specialize '(0)
                                (ptrcast memory-block (etype f32*)) (ui32 0))
                  (map-s->i
