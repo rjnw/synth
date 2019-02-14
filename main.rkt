@@ -57,7 +57,8 @@
 
 (define-syntax (#%module-begin/export stx)
   (syntax-parse stx
-    [(_ #:output output:expr #:bpm bpm:expr #:runner runner:expr
+    [(_ #:output output:expr #:bpm bpm:expr
+        (~optional (~seq #:runner runner:expr) #:defaults ([runner #''interp]))
         signal ...)
      #'(#%module-begin
         (syntax-parameterize
