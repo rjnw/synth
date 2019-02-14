@@ -2,6 +2,7 @@
 
 #:output "custom-scale.wav"
 #:bpm 120
+#:runner 'interp
 
 ;; custom "scale"
 (sequence sine-wave #:times 2

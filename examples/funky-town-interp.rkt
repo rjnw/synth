@@ -1,11 +1,11 @@
 #lang synth
 
-#:output "funky-town.wav"
+#:output "funky-town-interp.wav"
 #:bpm 380
 #:runner 'interp
 
 (sequence
-  sawtooth-wave #:times 20
+  sawtooth-wave #:times 2
   [(C 5)
    #f
    (C 5) #f (A# 4) #f (C 5) (#f 3) (G 4) (#f 3)

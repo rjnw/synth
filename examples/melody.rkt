@@ -2,7 +2,7 @@
 
 #:output "melody.wav"
 #:bpm 60
-
+#:runner 'jit
 ;; melody + chord background
 (mix (sequence sine-wave #:times 1
                [(chord C 3 3 major-arpeggio)
