@@ -46,12 +46,12 @@
                                                   offset))
                                                apps)]))))
                       (set!^ ni (add-nuw ni (ui32 1)))))
-   ret-void))
+   (return-void)))
 
 (define (build-mix ssfs (id (gensym 'mix)))
   (sham-function [,id (output : f32*) (offset : i32) : tvoid]
                  (block (for/list ([f ssfs]) (f output offset)) )
-              ret-void))
+                 (return-void)))
 
 (define (build-drum n pattern tempo total-weight (id (gensym 'drum)))
   ;; (pretty-print pattern)
@@ -88,7 +88,7 @@
                      apps))))
                 (set!^ w (add-nuw w (ui32 1)))
                 (set!^ offset (add-nuw offset (ui32 (* samples-per-beat (length pattern)))))))
-   ret-void))
+   (return-void)))
 
 (define (build-main entry-signal memory-block nsamples)
   (sham-function (,(gensym 'main) : tvoid)
@@ -97,4 +97,4 @@
                  (map-s->i
                   ;; #:specialize '(0)
                   (ptrcast memory-block (etype f32*)) (fl32 0.3) (ui32 nsamples))
-                 ret-void))
+                 (return-void)))
